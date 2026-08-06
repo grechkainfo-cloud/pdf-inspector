@@ -1,0 +1,1043 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "pdf-inspector HTTP API",
+    "version": "1.0.0",
+    "description": "Fast PDF classification and text/table extraction to structured Markdown.\n\nEvery `/v1` endpoint accepts the PDF in one of three interchangeable ways:\n\n1. `multipart/form-data` with a `file` part, plus either flat text parts or one JSON `options` part;\n2. `application/json` with `pdf_base64` plus the options as sibling keys;\n3. a raw PDF body (`application/pdf`) with the options in the query string.\n\nAuthentication is enabled only when the server is started with `PDF_INSPECTOR_API_KEY`.",
+    "license": { "name": "MIT" }
+  },
+  "servers": [{ "url": "/", "description": "This server" }],
+  "tags": [
+    { "name": "service", "description": "Health and metadata" },
+    { "name": "document", "description": "Whole-document classification and extraction" },
+    { "name": "regions", "description": "Bounding-box extraction for hybrid OCR pipelines" },
+    { "name": "tables", "description": "Table structure recovery (TSR) driven extraction" }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "tags": ["service"],
+        "summary": "Endpoint directory",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "List of available endpoints",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": ["service"],
+        "summary": "Liveness probe",
+        "description": "Never requires authentication. Aliases: `/healthz`, `/readyz`.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service is up",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "status": { "type": "string", "const": "ok" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/version": {
+      "get": {
+        "tags": ["service"],
+        "summary": "Build and API version",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Version info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": { "type": "string" },
+                    "version": { "type": "string" },
+                    "api_version": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "tags": ["service"],
+        "summary": "This document",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OpenAPI description",
+            "content": { "application/json": { "schema": { "type": "object" } } }
+          }
+        }
+      }
+    },
+    "/v1/process": {
+      "post": {
+        "tags": ["document"],
+        "summary": "Full pipeline: detect, extract, convert to Markdown",
+        "description": "Alias: `/v1/markdown`. Set `format=markdown` to receive the Markdown body directly as `text/markdown` instead of the JSON envelope.",
+        "requestBody": { "$ref": "#/components/requestBodies/ProcessRequest" },
+        "responses": {
+          "200": {
+            "description": "Processing result",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ProcessResponse" }
+              },
+              "text/markdown": {
+                "schema": { "type": "string" },
+                "example": "# Invoice\n\n| Item | Total |\n| --- | --- |\n"
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "422": { "$ref": "#/components/responses/Unprocessable" }
+        }
+      }
+    },
+    "/v1/markdown": {
+      "post": {
+        "tags": ["document"],
+        "summary": "Alias of /v1/process",
+        "requestBody": { "$ref": "#/components/requestBodies/ProcessRequest" },
+        "responses": {
+          "200": {
+            "description": "Processing result",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ProcessResponse" }
+              },
+              "text/markdown": { "schema": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
+    "/v1/detect": {
+      "post": {
+        "tags": ["document"],
+        "summary": "Type detection only (no text extraction)",
+        "description": "Fastest whole-document call: reads metadata and samples pages. `markdown` is always null.",
+        "requestBody": { "$ref": "#/components/requestBodies/ProcessRequest" },
+        "responses": {
+          "200": {
+            "description": "Detection result",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ProcessResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "422": { "$ref": "#/components/responses/Unprocessable" }
+        }
+      }
+    },
+    "/v1/analyze": {
+      "post": {
+        "tags": ["document"],
+        "summary": "Detect and extract, report layout complexity, skip Markdown",
+        "requestBody": { "$ref": "#/components/requestBodies/ProcessRequest" },
+        "responses": {
+          "200": {
+            "description": "Analysis result",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ProcessResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "422": { "$ref": "#/components/responses/Unprocessable" }
+        }
+      }
+    },
+    "/v1/classify": {
+      "post": {
+        "tags": ["document"],
+        "summary": "Lightweight routing classification",
+        "description": "Returns the PDF type and which pages need OCR (0-indexed) in ~10-50 ms. Takes no options.",
+        "requestBody": { "$ref": "#/components/requestBodies/PlainPdfRequest" },
+        "responses": {
+          "200": {
+            "description": "Classification",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ClassifyResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "422": { "$ref": "#/components/responses/Unprocessable" }
+        }
+      }
+    },
+    "/v1/text": {
+      "post": {
+        "tags": ["document"],
+        "summary": "Plain text extraction",
+        "description": "Set `format=text` to receive `text/plain` instead of the JSON envelope.",
+        "requestBody": { "$ref": "#/components/requestBodies/ExtractRequest" },
+        "responses": {
+          "200": {
+            "description": "Extracted text",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TextResponse" }
+              },
+              "text/plain": { "schema": { "type": "string" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "422": { "$ref": "#/components/responses/Unprocessable" }
+        }
+      }
+    },
+    "/v1/items": {
+      "post": {
+        "tags": ["document"],
+        "summary": "Positioned text items with font and style metadata",
+        "requestBody": { "$ref": "#/components/requestBodies/ExtractRequest" },
+        "responses": {
+          "200": {
+            "description": "Positioned items",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ItemsResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "422": { "$ref": "#/components/responses/Unprocessable" }
+        }
+      }
+    },
+    "/v1/pages/markdown": {
+      "post": {
+        "tags": ["document"],
+        "summary": "Per-page Markdown with layout metadata",
+        "description": "Unlike `/v1/process`, which returns one concatenated string, this returns Markdown per page so callers can mix native extraction with OCR. Note: `pages` here is **0-indexed**, matching the library call.",
+        "requestBody": { "$ref": "#/components/requestBodies/PagesMarkdownRequest" },
+        "responses": {
+          "200": {
+            "description": "Per-page Markdown",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PagesMarkdownResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "422": { "$ref": "#/components/responses/Unprocessable" }
+        }
+      }
+    },
+    "/v1/regions/text": {
+      "post": {
+        "tags": ["regions"],
+        "summary": "Extract text inside bounding-box regions",
+        "description": "Designed for hybrid OCR pipelines: a layout model detects regions on a rendered page, this returns the native PDF text inside each one. Each region carries `needs_ocr` so the caller knows when to fall back to GPU OCR.",
+        "requestBody": { "$ref": "#/components/requestBodies/RegionsRequest" },
+        "responses": {
+          "200": {
+            "description": "Per-region text",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RegionsResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "422": { "$ref": "#/components/responses/Unprocessable" }
+        }
+      }
+    },
+    "/v1/regions/tables": {
+      "post": {
+        "tags": ["regions"],
+        "summary": "Extract Markdown tables inside bounding-box regions",
+        "description": "Same input as `/v1/regions/text`, but runs table detection inside each region and returns Markdown pipe-tables. When no table is found, `text` is empty and `needs_ocr` is true.",
+        "requestBody": { "$ref": "#/components/requestBodies/RegionsRequest" },
+        "responses": {
+          "200": {
+            "description": "Per-region tables",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RegionsResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "422": { "$ref": "#/components/responses/Unprocessable" }
+        }
+      }
+    },
+    "/v1/regions/vector-grid": {
+      "post": {
+        "tags": ["regions"],
+        "summary": "Detect a ruled-line or rectangle grid inside one region",
+        "description": "Returns structure tokens and per-cell crop-pixel boxes in the same shape the TSR endpoints consume, so a vector-ruled table can skip the TSR model entirely.",
+        "requestBody": { "$ref": "#/components/requestBodies/VectorGridRequest" },
+        "responses": {
+          "200": {
+            "description": "Grid detection result",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/VectorGridResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "422": { "$ref": "#/components/responses/Unprocessable" }
+        }
+      }
+    },
+    "/v1/tables/structure": {
+      "post": {
+        "tags": ["tables"],
+        "summary": "Render Markdown tables from externally-supplied structure",
+        "description": "Takes structure tokens and cell boxes from a table-structure recognition model, lays out the cells, and fills them from the native PDF text — no OCR involved. Returns the raw TSR output with no quality fallback.",
+        "requestBody": { "$ref": "#/components/requestBodies/TsrRequest" },
+        "responses": {
+          "200": {
+            "description": "One Markdown table per input",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TablesMarkdownResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "422": { "$ref": "#/components/responses/Unprocessable" }
+        }
+      }
+    },
+    "/v1/tables/structure/cells": {
+      "post": {
+        "tags": ["tables"],
+        "summary": "Structured cells from externally-supplied structure",
+        "description": "Same input as `/v1/tables/structure`, but returns each cell with its grid position, spans, header flag, text, and page-point bbox instead of rendered Markdown.",
+        "requestBody": { "$ref": "#/components/requestBodies/TsrRequest" },
+        "responses": {
+          "200": {
+            "description": "One cell list per input",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TableCellsResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "422": { "$ref": "#/components/responses/Unprocessable" }
+        }
+      }
+    },
+    "/v1/tables/structure/auto": {
+      "post": {
+        "tags": ["tables"],
+        "summary": "Structure-driven Markdown with self-healing fallback",
+        "description": "Like `/v1/tables/structure`, but detects TSR quality problems (phantom empty rows, multiple rows stuffed into one cell) and repairs or replaces the output with heuristic detection. `fallback_reason` reports which path produced each table. Recommended for production callers.",
+        "requestBody": { "$ref": "#/components/requestBodies/TsrRequest" },
+        "responses": {
+          "200": {
+            "description": "One Markdown table per input, with diagnostics",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TablesMarkdownResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "413": { "$ref": "#/components/responses/TooLarge" },
+          "422": { "$ref": "#/components/responses/Unprocessable" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Active only when the server is started with PDF_INSPECTOR_API_KEY."
+      },
+      "apiKeyHeader": { "type": "apiKey", "in": "header", "name": "X-API-Key" }
+    },
+    "requestBodies": {
+      "PlainPdfRequest": {
+        "required": true,
+        "description": "The PDF, with no options.",
+        "content": {
+          "multipart/form-data": {
+            "schema": {
+              "type": "object",
+              "required": ["file"],
+              "properties": { "file": { "type": "string", "format": "binary" } }
+            }
+          },
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["pdf_base64"],
+              "properties": { "pdf_base64": { "type": "string", "contentEncoding": "base64" } }
+            }
+          },
+          "application/pdf": { "schema": { "type": "string", "format": "binary" } }
+        }
+      },
+      "ProcessRequest": {
+        "required": true,
+        "description": "The PDF plus processing options. In multipart bodies the options may be sent as flat text parts or as one JSON `options` part; with a raw PDF body they go in the query string.",
+        "content": {
+          "multipart/form-data": {
+            "schema": {
+              "type": "object",
+              "required": ["file"],
+              "properties": {
+                "file": { "type": "string", "format": "binary" },
+                "options": {
+                  "type": "string",
+                  "description": "JSON object with the same keys as the JSON body."
+                }
+              }
+            }
+          },
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "type": "object",
+                  "required": ["pdf_base64"],
+                  "properties": { "pdf_base64": { "type": "string", "contentEncoding": "base64" } }
+                },
+                { "$ref": "#/components/schemas/ProcessOptions" }
+              ]
+            }
+          },
+          "application/pdf": { "schema": { "type": "string", "format": "binary" } }
+        }
+      },
+      "ExtractRequest": {
+        "required": true,
+        "content": {
+          "multipart/form-data": {
+            "schema": {
+              "type": "object",
+              "required": ["file"],
+              "properties": {
+                "file": { "type": "string", "format": "binary" },
+                "options": { "type": "string" }
+              }
+            }
+          },
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "type": "object",
+                  "required": ["pdf_base64"],
+                  "properties": { "pdf_base64": { "type": "string", "contentEncoding": "base64" } }
+                },
+                { "$ref": "#/components/schemas/ExtractOptions" }
+              ]
+            }
+          },
+          "application/pdf": { "schema": { "type": "string", "format": "binary" } }
+        }
+      },
+      "PagesMarkdownRequest": {
+        "required": true,
+        "content": {
+          "multipart/form-data": {
+            "schema": {
+              "type": "object",
+              "required": ["file"],
+              "properties": {
+                "file": { "type": "string", "format": "binary" },
+                "options": { "type": "string" }
+              }
+            }
+          },
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "type": "object",
+                  "required": ["pdf_base64"],
+                  "properties": { "pdf_base64": { "type": "string", "contentEncoding": "base64" } }
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "pages": {
+                      "description": "0-indexed pages. Omit for every page in document order.",
+                      "oneOf": [
+                        { "type": "array", "items": { "type": "integer", "minimum": 0 } },
+                        { "type": "integer", "minimum": 0 },
+                        { "type": "string", "examples": ["0,2,4-9"] }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "application/pdf": { "schema": { "type": "string", "format": "binary" } }
+        }
+      },
+      "RegionsRequest": {
+        "required": true,
+        "description": "The PDF plus the regions to read. Coordinates are PDF points with a top-left origin.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "type": "object",
+                  "required": ["pdf_base64"],
+                  "properties": { "pdf_base64": { "type": "string", "contentEncoding": "base64" } }
+                },
+                { "$ref": "#/components/schemas/RegionsOptions" }
+              ]
+            },
+            "example": {
+              "pdf_base64": "JVBERi0xLjQK...",
+              "page_regions": [{ "page": 0, "regions": [[72, 96, 540, 320]] }]
+            }
+          },
+          "multipart/form-data": {
+            "schema": {
+              "type": "object",
+              "required": ["file", "options"],
+              "properties": {
+                "file": { "type": "string", "format": "binary" },
+                "options": {
+                  "type": "string",
+                  "description": "JSON object holding `page_regions`."
+                }
+              }
+            }
+          }
+        }
+      },
+      "VectorGridRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "type": "object",
+                  "required": ["pdf_base64"],
+                  "properties": { "pdf_base64": { "type": "string", "contentEncoding": "base64" } }
+                },
+                { "$ref": "#/components/schemas/VectorGridOptions" }
+              ]
+            }
+          },
+          "multipart/form-data": {
+            "schema": {
+              "type": "object",
+              "required": ["file", "options"],
+              "properties": {
+                "file": { "type": "string", "format": "binary" },
+                "options": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "TsrRequest": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "type": "object",
+                  "required": ["pdf_base64"],
+                  "properties": { "pdf_base64": { "type": "string", "contentEncoding": "base64" } }
+                },
+                { "$ref": "#/components/schemas/TsrOptions" }
+              ]
+            }
+          },
+          "multipart/form-data": {
+            "schema": {
+              "type": "object",
+              "required": ["file", "options"],
+              "properties": {
+                "file": { "type": "string", "format": "binary" },
+                "options": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Malformed request: bad JSON, missing file part, invalid option value.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      },
+      "Unauthorized": {
+        "description": "Missing or invalid API key.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      },
+      "TooLarge": {
+        "description": "Upload exceeds PDF_INSPECTOR_MAX_UPLOAD_MB.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      },
+      "Unprocessable": {
+        "description": "The request was well-formed but the PDF could not be processed: `not_a_pdf`, `encrypted`, `parse_error`, `invalid_structure`.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Stable machine-readable identifier.",
+                "examples": ["not_a_pdf", "encrypted", "invalid_request", "payload_too_large"]
+              },
+              "message": { "type": "string" }
+            }
+          }
+        }
+      },
+      "PageSelection": {
+        "description": "Pages as a list, a single number, or a `1,3,5-10` spec string.",
+        "oneOf": [
+          { "type": "array", "items": { "type": "integer" } },
+          { "type": "integer" },
+          { "type": "string" }
+        ]
+      },
+      "ProcessOptions": {
+        "type": "object",
+        "description": "Unknown keys are ignored.",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["detect", "analyze", "full"],
+            "description": "Overrides the endpoint's default processing depth."
+          },
+          "pages": {
+            "allOf": [{ "$ref": "#/components/schemas/PageSelection" }],
+            "description": "1-indexed pages to process."
+          },
+          "password": { "type": "string", "description": "Password for an encrypted PDF." },
+          "format": {
+            "type": "string",
+            "enum": ["json", "markdown"],
+            "default": "json"
+          },
+          "profile": {
+            "type": "string",
+            "enum": ["fidelity", "compact"],
+            "default": "fidelity",
+            "description": "`compact` collapses token-heavy source formatting such as dot leaders."
+          },
+          "compact": { "type": "boolean", "description": "Shorthand for profile=compact." },
+          "detect_headers": { "type": "boolean", "default": true },
+          "detect_lists": { "type": "boolean", "default": true },
+          "detect_code": { "type": "boolean", "default": true },
+          "detect_bold": { "type": "boolean", "default": true },
+          "detect_italic": { "type": "boolean", "default": true },
+          "detect_underline": { "type": "boolean", "default": true },
+          "base_font_size": { "type": "number" },
+          "remove_page_numbers": { "type": "boolean", "default": true },
+          "format_urls": { "type": "boolean", "default": true },
+          "fix_hyphenation": { "type": "boolean", "default": true },
+          "include_images": { "type": "boolean", "default": false },
+          "include_links": { "type": "boolean", "default": true },
+          "include_page_numbers": {
+            "type": "boolean",
+            "default": false,
+            "description": "Insert `<!-- Page N -->` markers between pages."
+          },
+          "strip_headers_footers": { "type": "boolean", "default": true },
+          "strategy": {
+            "type": "string",
+            "enum": ["early_exit", "full", "sample", "pages"],
+            "default": "sample",
+            "description": "Which pages detection scans."
+          },
+          "sample_size": { "type": "integer", "default": 8, "minimum": 1 },
+          "detect_pages": { "$ref": "#/components/schemas/PageSelection" },
+          "min_text_ops_per_page": { "type": "integer", "default": 3 },
+          "text_page_ratio_threshold": { "type": "number", "default": 0.6 }
+        }
+      },
+      "ExtractOptions": {
+        "type": "object",
+        "properties": {
+          "pages": {
+            "allOf": [{ "$ref": "#/components/schemas/PageSelection" }],
+            "description": "1-indexed pages."
+          },
+          "password": { "type": "string" },
+          "format": {
+            "type": "string",
+            "enum": ["json", "text"],
+            "default": "json",
+            "description": "`/v1/text` only."
+          }
+        }
+      },
+      "RegionsOptions": {
+        "type": "object",
+        "required": ["page_regions"],
+        "properties": {
+          "page_regions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["page", "regions"],
+              "properties": {
+                "page": { "type": "integer", "minimum": 0, "description": "0-indexed." },
+                "regions": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": { "type": "number" },
+                    "minItems": 4,
+                    "maxItems": 4,
+                    "description": "[x1, y1, x2, y2] in PDF points, top-left origin."
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "VectorGridOptions": {
+        "type": "object",
+        "required": ["page", "region"],
+        "properties": {
+          "page": { "type": "integer", "minimum": 0, "description": "0-indexed." },
+          "region": {
+            "type": "array",
+            "items": { "type": "number" },
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "render_dpi": { "type": "number", "default": 200 }
+        }
+      },
+      "TsrOptions": {
+        "type": "object",
+        "required": ["tables"],
+        "properties": {
+          "tables": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["page", "crop_pdf_pt_bbox", "structure_tokens"],
+              "properties": {
+                "page": { "type": "integer", "minimum": 0, "description": "0-indexed." },
+                "crop_pdf_pt_bbox": {
+                  "type": "array",
+                  "items": { "type": "number" },
+                  "minItems": 4,
+                  "maxItems": 4,
+                  "description": "Crop box in PDF points, top-left origin."
+                },
+                "render_dpi": {
+                  "type": "number",
+                  "default": 200,
+                  "description": "DPI the crop image was rendered at."
+                },
+                "structure_tokens": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "examples": [["<table>", "<tr>", "<td></td>", "<td></td>", "</tr>", "</table>"]]
+                },
+                "cell_bboxes": {
+                  "type": "array",
+                  "description": "One box per cell in crop image-pixel space: 4 values or an 8-value polygon.",
+                  "items": { "type": "array", "items": { "type": "number" } }
+                }
+              }
+            }
+          }
+        }
+      },
+      "PageOcrReasons": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer" },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["scanned", "no_text", "vector_text", "suspected_garbled_text"]
+            }
+          }
+        }
+      },
+      "ProcessResponse": {
+        "type": "object",
+        "properties": {
+          "pdf_type": {
+            "type": "string",
+            "enum": ["text_based", "scanned", "image_based", "mixed"]
+          },
+          "page_count": { "type": "integer" },
+          "processing_time_ms": { "type": "integer" },
+          "has_text": { "type": "boolean" },
+          "markdown_length": { "type": "integer" },
+          "markdown": { "type": ["string", "null"] },
+          "pages_needing_ocr": {
+            "type": "array",
+            "items": { "type": "integer" },
+            "description": "1-indexed."
+          },
+          "ocr_reasons_by_page": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PageOcrReasons" }
+          },
+          "title": { "type": ["string", "null"] },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "layout": {
+            "type": "object",
+            "properties": {
+              "is_complex": { "type": "boolean" },
+              "pages_with_tables": { "type": "array", "items": { "type": "integer" } },
+              "pages_with_columns": { "type": "array", "items": { "type": "integer" } }
+            }
+          },
+          "has_encoding_issues": {
+            "type": "boolean",
+            "description": "True when broken font encodings were detected; fall back to OCR."
+          }
+        }
+      },
+      "ClassifyResponse": {
+        "type": "object",
+        "properties": {
+          "pdf_type": {
+            "type": "string",
+            "enum": ["text_based", "scanned", "image_based", "mixed"]
+          },
+          "page_count": { "type": "integer" },
+          "pages_needing_ocr": {
+            "type": "array",
+            "items": { "type": "integer" },
+            "description": "0-indexed."
+          },
+          "confidence": { "type": "number" }
+        }
+      },
+      "TextResponse": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "length": { "type": "integer", "description": "Length in bytes (UTF-8)." }
+        }
+      },
+      "TextItem": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "page": { "type": "integer", "description": "1-indexed." },
+          "x": { "type": "number" },
+          "y": { "type": "number", "description": "PDF coordinates, bottom-left origin." },
+          "width": { "type": "number" },
+          "height": { "type": "number" },
+          "font": { "type": "string" },
+          "font_size": { "type": "number" },
+          "is_bold": { "type": "boolean" },
+          "is_italic": { "type": "boolean" },
+          "is_underline": { "type": "boolean" },
+          "is_strikeout": { "type": "boolean" },
+          "item_type": {
+            "type": "string",
+            "enum": ["text", "image", "link", "form_field"]
+          },
+          "mcid": { "type": ["integer", "null"], "description": "Marked-content id, when tagged." },
+          "url": { "type": "string", "description": "Present only when item_type is `link`." }
+        }
+      },
+      "ItemsResponse": {
+        "type": "object",
+        "properties": {
+          "total_items": { "type": "integer" },
+          "underlined_count": { "type": "integer" },
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/TextItem" } }
+        }
+      },
+      "PagesMarkdownResponse": {
+        "type": "object",
+        "properties": {
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "page": { "type": "integer", "description": "0-indexed." },
+                "markdown": { "type": "string" },
+                "needs_ocr": { "type": "boolean" },
+                "ocr_reason": { "type": ["string", "null"] }
+              }
+            }
+          },
+          "pages_with_tables": { "type": "array", "items": { "type": "integer" } },
+          "pages_with_columns": { "type": "array", "items": { "type": "integer" } },
+          "pages_needing_ocr": { "type": "array", "items": { "type": "integer" } },
+          "ocr_reasons_by_page": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PageOcrReasons" }
+          },
+          "is_complex": { "type": "boolean" }
+        }
+      },
+      "RegionsResponse": {
+        "type": "object",
+        "properties": {
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "page": { "type": "integer", "description": "0-indexed." },
+                "regions": {
+                  "type": "array",
+                  "description": "Parallel to the requested regions.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "text": { "type": "string" },
+                      "needs_ocr": { "type": "boolean" },
+                      "ocr_reason": { "type": ["string", "null"] }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "VectorGridResponse": {
+        "type": "object",
+        "properties": {
+          "detected": { "type": "boolean" },
+          "structure_tokens": { "type": "array", "items": { "type": "string" } },
+          "cell_bboxes": {
+            "type": "array",
+            "description": "One crop-pixel box per `<td>` token, in document order.",
+            "items": { "type": "array", "items": { "type": "number" } }
+          }
+        }
+      },
+      "TablesMarkdownResponse": {
+        "type": "object",
+        "properties": {
+          "tables": {
+            "type": "array",
+            "description": "One entry per input, in input order.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "markdown": { "type": "string" },
+                "fallback_reason": {
+                  "type": ["string", "null"],
+                  "description": "Null when the TSR path produced the output directly.",
+                  "examples": ["multi_row_in_cell_expanded", "phantom_empty_row"]
+                }
+              }
+            }
+          }
+        }
+      },
+      "TableCellsResponse": {
+        "type": "object",
+        "properties": {
+          "tables": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "cells": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "row": { "type": "integer" },
+                      "col": { "type": "integer" },
+                      "rowspan": { "type": "integer" },
+                      "colspan": { "type": "integer" },
+                      "is_header": { "type": "boolean" },
+                      "text": { "type": "string" },
+                      "page_pt_bbox": {
+                        "type": "array",
+                        "items": { "type": "number" },
+                        "minItems": 4,
+                        "maxItems": 4
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "security": [{ "bearerAuth": [] }, { "apiKeyHeader": [] }]
+}

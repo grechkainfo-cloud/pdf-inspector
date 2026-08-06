@@ -31,6 +31,10 @@
 #[cfg(feature = "python")]
 pub mod python;
 
+/// HTTP API server (cargo feature `server`, binary `pdf-api`).
+#[cfg(all(feature = "server", not(target_arch = "wasm32")))]
+pub mod http;
+
 pub mod adobe_korea1;
 pub mod detector;
 pub mod extractor;
@@ -49,7 +53,8 @@ pub use detector::{
     detect_pdf_type_with_config, DetectionConfig, PdfType, PdfTypeResult, ScanStrategy,
 };
 pub use extractor::{
-    extract_text, extract_text_with_positions, extract_text_with_positions_mem,
+    extract_text, extract_text_mem_with_password, extract_text_with_positions,
+    extract_text_with_positions_mem, extract_text_with_positions_mem_pages_with_password,
     extract_text_with_positions_pages, extract_text_with_positions_pages_with_password,
 };
 pub use markdown::{

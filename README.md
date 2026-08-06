@@ -162,6 +162,32 @@ detect-pdf document.pdf --analyze --json
 
 From a source checkout, use `cargo run --bin pdf2md -- document.pdf` or `cargo run --bin detect-pdf -- document.pdf` instead.
 
+### HTTP API
+
+The `server` feature adds `pdf-api`, which exposes every library entry point over HTTP —
+classification, Markdown, positioned items, region extraction, and table structure recovery.
+
+```bash
+# From source
+cargo run --release --features server --bin pdf-api
+
+# Or as a container (also ships pdf2md and detect-pdf)
+docker build -t pdf-inspector .
+docker run -d -p 8080:8080 pdf-inspector
+```
+
+```bash
+curl -F file=@document.pdf http://localhost:8080/v1/process
+curl -F file=@document.pdf 'http://localhost:8080/v1/process?format=markdown'
+curl -F file=@document.pdf http://localhost:8080/v1/classify
+```
+
+Each endpoint takes the PDF as a multipart `file`, as base64 in a JSON body, or as a raw
+request body — options travel as form fields, JSON keys, or query parameters respectively.
+
+Endpoint reference: [docs/http-api.md](docs/http-api.md) (or `GET /openapi.json` on a running
+server). Packaging, image transfer, and systemd setup: [docs/deployment.md](docs/deployment.md).
+
 ## Architecture
 
 ```
@@ -207,9 +233,11 @@ src/
   extractor/            — Text extraction pipeline
   tables/               — Table detection and formatting
   markdown/             — Markdown conversion and structure detection
-  bin/                  — CLI tools (pdf2md, detect_pdf)
+  http/                 — HTTP API (feature `server`): router, request parsing, DTOs
+  bin/                  — CLI tools (pdf2md, detect_pdf) and the pdf-api server
 napi/                   — Node.js/Bun bindings (napi-rs)
 wasm/                   — Browser bindings (wasm-bindgen)
+deploy/                 — systemd unit and environment file for the container
 ```
 
 ## How classification works

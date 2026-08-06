@@ -1,0 +1,54 @@
+# systemd unit for the pdf-inspector HTTP API running in Docker.
+#
+# Install:
+#   sudo cp deploy/pdf-inspector.service /etc/systemd/system/
+#   sudo cp deploy/pdf-inspector.env     /etc/pdf-inspector.env
+#   sudo chmod 600 /etc/pdf-inspector.env     # it may hold the API key
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now pdf-inspector
+#
+# The unit runs the container in the foreground (--rm, no -d) so systemd owns
+# the process lifecycle: it sees crashes, restarts on failure, and stops the
+# container cleanly on `systemctl stop`.
+
+[Unit]
+Description=pdf-inspector HTTP API
+Documentation=https://github.com/firecrawl/pdf-inspector
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+# Image tag to run. Override with a systemd drop-in when upgrading.
+Environment=PDF_INSPECTOR_IMAGE=pdf-inspector:latest
+Environment=PDF_INSPECTOR_CONTAINER=pdf-inspector
+# Host port published on the server. Use 127.0.0.1:8080 when a reverse proxy
+# terminates TLS on the same host.
+Environment=PDF_INSPECTOR_PUBLISH=0.0.0.0:8080
+
+EnvironmentFile=-/etc/pdf-inspector.env
+
+# A leftover container from an unclean shutdown would block the run below.
+ExecStartPre=-/usr/bin/docker rm -f ${PDF_INSPECTOR_CONTAINER}
+ExecStart=/usr/bin/docker run \
+    --rm \
+    --name ${PDF_INSPECTOR_CONTAINER} \
+    --publish ${PDF_INSPECTOR_PUBLISH}:8080 \
+    --env-file /etc/pdf-inspector.env \
+    --read-only \
+    --tmpfs /tmp:size=16m \
+    --cap-drop ALL \
+    --security-opt no-new-privileges:true \
+    --memory 2g \
+    --log-opt max-size=10m \
+    --log-opt max-file=3 \
+    ${PDF_INSPECTOR_IMAGE}
+ExecStop=/usr/bin/docker stop --time 30 ${PDF_INSPECTOR_CONTAINER}
+
+Restart=always
+RestartSec=5s
+# Docker relays SIGTERM to the entrypoint, which drains in-flight requests.
+TimeoutStopSec=45s
+
+[Install]
+WantedBy=multi-user.target
