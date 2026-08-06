@@ -1,8 +1,8 @@
 # Развёртывание: Docker-образ и запуск как службы
 
-Инструкция описывает полный цикл: сборка образа → выгрузка его в файл →
-перенос на другой Linux-сервер → запуск как системной службы с проброшенным
-HTTP-портом.
+Инструкция описывает полный цикл: перенос исходников → сборка образа →
+выгрузка его в файл → перенос на другой Linux-сервер → запуск как системной
+службы с проброшенным HTTP-портом.
 
 Описание самого API — в [`docs/http-api.md`](http-api.md).
 
@@ -27,7 +27,162 @@ HTTP-портом.
 
 ---
 
-## 1. Сборка образа
+## 1. Перенос исходников на сервер
+
+Исходники на сервере нужны в трёх случаях: собрать образ прямо там, взять
+файлы из `deploy/` для systemd-службы, запустить `deploy/cleanup.sh`. Если
+образ уже собран на рабочей машине, полные исходники не нужны — хватит
+раздела 1.5.
+
+> **Сначала оцените свободное место.** Сборка образа на сервере требует
+> 3–4 ГБ: слой `rust:1-slim-bookworm` весит около 1,5 ГБ, каталог `target/`
+> внутри стадии сборки — ещё столько же. На забитом диске сборка упадёт на
+> середине и оставит мусор в `/var/lib/docker`. Если на `/` меньше 5 ГБ
+> свободного места — соберите образ на рабочей машине и перенесите готовым
+> (разделы 3–4), а на сервер везите только файлы развёртывания.
+
+### 1.1. Если сервер видит GitHub
+
+```bash
+git clone --depth 1 https://github.com/grechkainfo-cloud/pdf-inspector.git
+cd pdf-inspector
+```
+
+`--depth 1` берёт один коммит вместо всей истории: 13 МБ каталога `.git`
+на сервере не нужны. Нужна конкретная ветка — добавьте `-b <ветка>`.
+
+Без git на сервере — тем же архивом прямо от GitHub:
+
+```bash
+curl -fsSL -o pdf-inspector.tar.gz \
+    https://github.com/grechkainfo-cloud/pdf-inspector/archive/refs/heads/main.tar.gz
+tar -xzf pdf-inspector.tar.gz    # распакуется в pdf-inspector-main/
+```
+
+### 1.2. Закрытый контур: архив с рабочей машины
+
+Упаковывайте через `git archive`, а не архиватором по каталогу. Разница не
+косметическая:
+
+* архив собирается из коммита, а не из рабочей копии — внутрь не попадут
+  `target/` (гигабайты), локальные правки и мусор редактора;
+* переводы строк берутся из репозитория и остаются LF. Архиватор по
+  рабочей копии на Windows везёт CRLF, а это `bad interpreter: ^M` у
+  скриптов и висящий возврат каретки в каждом значении env-файла;
+* бит `+x` на `deploy/cleanup.sh` сохраняется. Windows-раздел его вообще
+  не хранит, поэтому `tar` по рабочей копии его теряет.
+
+Работает одинаково в Git Bash, PowerShell и cmd:
+
+```bash
+# Полные исходники: 10 МБ, 331 файл
+git archive --format=tar.gz --prefix=pdf-inspector/ -o pdf-inspector-src.tar.gz HEAD
+
+# Контрольная сумма — проверить целостность после передачи
+sha256sum pdf-inspector-src.tar.gz > pdf-inspector-src.tar.gz.sha256
+```
+
+`--prefix=` заставляет архив распаковаться в отдельный каталог, а не
+рассыпаться 331 файлом по текущему.
+
+Если на сервере нужно только собрать образ, берите минимум — Dockerfile
+использует ровно эти пути, остальные 9 МБ приходятся на тестовые PDF:
+
+```bash
+# 1,4 МБ вместо 10
+git archive --format=tar.gz --prefix=pdf-inspector/ \
+    -o pdf-inspector-build.tar.gz HEAD Cargo.toml src external Dockerfile .dockerignore
+```
+
+**Чего не делать:** `Compress-Archive` и вообще zip. Формат не хранит
+права Unix, поэтому `cleanup.sh` приедет без бита `+x`, а при упаковке
+рабочей копии — ещё и с CRLF.
+
+### 1.3. Передача
+
+```bash
+scp pdf-inspector-src.tar.gz pdf-inspector-src.tar.gz.sha256 user@target-server:/tmp/
+```
+
+Для повторных переносов удобнее `rsync` — он шлёт только изменившееся:
+
+```bash
+rsync -az --delete \
+    --exclude '.git' --exclude 'target' --exclude 'tests/fixtures' \
+    ./ user@target-server:/opt/pdf-inspector/
+```
+
+### 1.4. Распаковка и проверка
+
+```bash
+cd /tmp
+sha256sum -c pdf-inspector-src.tar.gz.sha256   # должно быть: OK
+
+sudo mkdir -p /opt && cd /opt
+sudo tar -xzf /tmp/pdf-inspector-src.tar.gz
+cd pdf-inspector
+```
+
+Две проверки, которые экономят час на отладке непонятных сбоев:
+
+```bash
+# 1. Права: у скрипта должен быть бит +x
+ls -l deploy/cleanup.sh          # -rwxr-xr-x ... deploy/cleanup.sh
+
+# 2. Переводы строк: в выводе не должно быть "CRLF line terminators"
+file deploy/cleanup.sh deploy/pdf-inspector.env Dockerfile
+```
+
+Если что-то приехало не так (паковали zip'ом или правили в
+Windows-редакторе):
+
+```bash
+# CRLF → LF
+sudo dnf install -y dos2unix        # или: sudo apt-get install -y dos2unix
+dos2unix deploy/*.sh deploy/*.env deploy/*.service Dockerfile
+# без dos2unix то же самое:
+sed -i 's/\r$//' deploy/cleanup.sh deploy/pdf-inspector.env
+
+# потерянный бит выполнения
+chmod +x deploy/cleanup.sh
+```
+
+Быстрая проверка, что исходники приехали целыми:
+
+```bash
+ls Cargo.toml src/lib.rs external/bcmaps/ | head
+```
+
+Каталог `external/bcmaps` обязателен: без него сборка пройдёт, но
+контейнер потеряет Unicode-отображение CJK-шрифтов с CID-кодировкой.
+
+### 1.5. Только файлы развёртывания
+
+Когда образ собран заранее и переносится готовым, исходники не нужны —
+на сервер едут 12 КБ:
+
+```bash
+git archive --format=tar.gz --prefix=pdf-inspector/ \
+    -o pdf-deploy.tar.gz HEAD deploy docker-compose.yml
+```
+
+Внутри — `pdf-inspector.service`, `pdf-inspector.env`, `cleanup.sh` и
+`docker-compose.yml`, то есть всё, что нужно разделам 5 и 6.
+
+### 1.6. Сколько это занимает
+
+| Что | Размер |
+|---|---|
+| Архив исходников, полный | 10 МБ |
+| Он же распакованный | 15 МБ |
+| Архив только для сборки образа | 1,4 МБ |
+| Архив только файлов развёртывания | 12 КБ |
+| Свободное место под сборку образа | 3–4 ГБ |
+| Готовый образ | 110–130 МБ |
+
+---
+
+## 2. Сборка образа
 
 На машине с Docker, из корня репозитория:
 
@@ -51,7 +206,7 @@ docker rm -f pdf-check
 
 ---
 
-## 2. Выгрузка образа в файл для переноса
+## 3. Выгрузка образа в файл для переноса
 
 Способ подходит, когда на целевом сервере нет доступа к Docker-реестру
 (закрытый контур, отсутствие интернета).
@@ -82,7 +237,7 @@ docker save -o pdf-inspector-latest.tar pdf-inspector:latest
 
 ---
 
-## 3. Перенос на целевой сервер
+## 4. Перенос на целевой сервер
 
 ```bash
 scp pdf-inspector-latest.tar.gz \
@@ -124,25 +279,25 @@ docker tag registry.example.com/tools/pdf-inspector:0.1.7 pdf-inspector:latest
 
 ---
 
-## 4. Запуск как службы (systemd)
+## 5. Запуск как службы (systemd)
 
 Вариант для «чистого» сервера с Docker, без docker compose. systemd владеет
 жизненным циклом контейнера: перезапускает при падении, останавливает при
 `systemctl stop`, пишет логи в журнал.
 
-### 4.1. Установка
+### 5.1. Установка
 
-Файлы `deploy/pdf-inspector.service` и `deploy/pdf-inspector.env` лежат в
-репозитории. Скопируйте их на сервер (например, тем же `scp`) и установите:
+Файлы `deploy/pdf-inspector.service` и `deploy/pdf-inspector.env` приезжают
+вместе с исходниками (раздел 1). Из корня распакованного каталога:
 
 ```bash
-sudo cp pdf-inspector.service /etc/systemd/system/
-sudo cp pdf-inspector.env     /etc/pdf-inspector.env
+sudo cp deploy/pdf-inspector.service /etc/systemd/system/
+sudo cp deploy/pdf-inspector.env     /etc/pdf-inspector.env
 sudo chmod 600 /etc/pdf-inspector.env
 sudo chown root:root /etc/pdf-inspector.env
 ```
 
-### 4.2. Настройка
+### 5.2. Настройка
 
 Отредактируйте `/etc/pdf-inspector.env`:
 
@@ -151,7 +306,7 @@ sudo chown root:root /etc/pdf-inspector.env
 # 127.0.0.1 — только локально (когда впереди стоит nginx с TLS).
 PDF_INSPECTOR_PUBLISH=0.0.0.0:8080
 
-# Тег образа, загруженного на шаге 3.
+# Тег образа, загруженного на шаге 4.
 PDF_INSPECTOR_IMAGE=pdf-inspector:latest
 
 # Ключ доступа: без него /v1/* открыт всем, кто дотянется до порта.
@@ -166,7 +321,7 @@ RUST_LOG=info
 `PDF_INSPECTOR_BIND`/`PDF_INSPECTOR_PORT` в этом файле не нужно — это сломает
 соответствие портов.
 
-### 4.3. Запуск
+### 5.3. Запуск
 
 ```bash
 sudo systemctl daemon-reload
@@ -185,7 +340,7 @@ curl -s -H "Authorization: Bearer $KEY" \
      http://<адрес-сервера>:8080/v1/process | jq .pdf_type
 ```
 
-### 4.4. Управление
+### 5.4. Управление
 
 ```bash
 sudo systemctl restart pdf-inspector
@@ -193,10 +348,10 @@ sudo systemctl stop pdf-inspector
 sudo systemctl disable --now pdf-inspector   # выключить автозапуск
 ```
 
-### 4.5. Обновление версии
+### 5.5. Обновление версии
 
 ```bash
-# 1. Перенести и загрузить новый образ (шаги 2–3), присвоив ему свой тег
+# 1. Перенести и загрузить новый образ (шаги 3–4), присвоив ему свой тег
 gunzip -c pdf-inspector-0.1.8.tar.gz | docker load
 
 # 2. Переключить службу на новый тег
@@ -212,7 +367,7 @@ sudo systemctl restart pdf-inspector
 
 ---
 
-## 5. Запуск через docker compose
+## 6. Запуск через docker compose
 
 Альтернатива systemd-юниту, если на сервере уже используется compose. Файл
 `docker-compose.yml` лежит в корне репозитория.
@@ -233,7 +388,7 @@ docker compose down
 
 ---
 
-## 6. Порт, доступ и TLS
+## 7. Порт, доступ и TLS
 
 * **Порт.** Наружу публикуется только `8080/tcp`. Изменить внешний порт можно
   в `PDF_INSPECTOR_PUBLISH` (например, `0.0.0.0:9000` → API доступен на 9000).
@@ -275,7 +430,7 @@ docker compose down
 
 ---
 
-## 7. Ресурсы и производительность
+## 8. Ресурсы и производительность
 
 * Пиковая память ≈ размер самого крупного PDF × число одновременных разборов.
   `PDF_INSPECTOR_MAX_CONCURRENCY` ограничивает второй множитель; по умолчанию
@@ -288,7 +443,7 @@ docker compose down
 
 ---
 
-## 8. Диагностика
+## 9. Диагностика
 
 | Симптом | Причина и решение |
 |---|---|
@@ -309,7 +464,7 @@ sudo systemctl restart pdf-inspector
 
 ---
 
-## 9. Запуск без Docker
+## 10. Запуск без Docker
 
 Если контейнеризация не нужна, бинарник ставится напрямую:
 
