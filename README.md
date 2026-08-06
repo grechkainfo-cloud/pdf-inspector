@@ -182,6 +182,11 @@ curl -F file=@document.pdf 'http://localhost:8080/v1/process?format=markdown'
 curl -F file=@document.pdf http://localhost:8080/v1/classify
 ```
 
+For trying it by hand, open **<http://localhost:8080/ui>** — a built-in console where you
+drop in a PDF, pick any endpoint, preview the Markdown, and download the result. It ships
+inside the binary and loads nothing from the network, so it works in air-gapped
+deployments. Disable it with `PDF_INSPECTOR_UI=0`.
+
 Each endpoint takes the PDF as a multipart `file`, as base64 in a JSON body, or as a raw
 request body — options travel as form fields, JSON keys, or query parameters respectively.
 

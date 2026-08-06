@@ -7,7 +7,7 @@
 #![cfg(feature = "server")]
 
 use axum::body::Body;
-use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
+use axum::http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use axum::http::{Request, StatusCode};
 use axum::Router;
 use pdf_inspector::http::{router, AppState, ServerConfig};
@@ -130,6 +130,68 @@ async fn openapi_document_is_served() {
 
     assert_eq!(status, StatusCode::OK);
     assert!(body["paths"]["/v1/process"].is_object());
+}
+
+#[tokio::test]
+async fn console_is_served_at_ui() {
+    let request = Request::builder().uri("/ui").body(Body::empty()).unwrap();
+    let (status, content_type, body) = send(app(), request).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(content_type.starts_with("text/html"));
+    assert!(String::from_utf8_lossy(&body).contains("<!doctype html>"));
+}
+
+#[tokio::test]
+async fn root_serves_the_console_to_browsers_and_json_to_tools() {
+    // A browser sends Accept: text/html — it should land on something usable.
+    let request = Request::builder()
+        .uri("/")
+        .header(ACCEPT, "text/html,application/xhtml+xml")
+        .body(Body::empty())
+        .unwrap();
+    let (status, content_type, _) = send(app(), request).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(content_type.starts_with("text/html"));
+
+    // curl and health checkers keep the JSON directory.
+    let request = Request::builder().uri("/").body(Body::empty()).unwrap();
+    let (status, body) = send_json(app(), request).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["service"], "pdf-inspector");
+    assert_eq!(body["console"], "/ui");
+}
+
+#[tokio::test]
+async fn console_can_be_disabled() {
+    let config = ServerConfig {
+        ui_enabled: false,
+        ..ServerConfig::default()
+    };
+
+    let request = Request::builder().uri("/ui").body(Body::empty()).unwrap();
+    let (status, body) = send_json(app_with(config.clone()), request).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"]["code"], "ui_disabled");
+
+    // With the console off, a browser hitting the root still gets the JSON.
+    let request = Request::builder()
+        .uri("/")
+        .header(ACCEPT, "text/html")
+        .body(Body::empty())
+        .unwrap();
+    let (status, _, body) = send(app_with(config), request).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(String::from_utf8_lossy(&body).contains("pdf-inspector"));
+}
+
+#[tokio::test]
+async fn console_never_requires_an_api_key() {
+    // The page is a static client; locking it away would only stop people
+    // from discovering how to authenticate.
+    let request = Request::builder().uri("/ui").body(Body::empty()).unwrap();
+    let (status, _, _) = send(app_with(authed_config()), request).await;
+    assert_eq!(status, StatusCode::OK);
 }
 
 #[tokio::test]

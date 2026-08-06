@@ -6,7 +6,8 @@
 //! async runtime's threads.
 
 use axum::extract::State;
-use axum::http::header::CONTENT_TYPE;
+use axum::http::header::{ACCEPT, CONTENT_TYPE};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 
@@ -20,13 +21,45 @@ use crate::ProcessMode;
 // Service endpoints
 // =========================================================================
 
-/// `GET /` — endpoint directory, so a bare `curl` of the root is useful.
-pub async fn index() -> impl IntoResponse {
+/// `GET /` — the browser console for people, the endpoint directory for
+/// tools.
+///
+/// Negotiated on `Accept` rather than split across two paths: a human who
+/// types the host into a browser lands on something usable, while `curl`
+/// and health checkers keep the JSON they already parse.
+pub async fn index(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    let wants_html = headers
+        .get(ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.contains("text/html"));
+
+    if wants_html && state.ui_enabled {
+        return super::ui::response();
+    }
+    directory().into_response()
+}
+
+/// `GET /ui` — the browser console, regardless of `Accept`.
+pub async fn ui(State(state): State<AppState>) -> Response {
+    if !state.ui_enabled {
+        return ApiError::new(
+            StatusCode::NOT_FOUND,
+            "ui_disabled",
+            "the browser console is disabled (PDF_INSPECTOR_UI=0)",
+        )
+        .into_response();
+    }
+    super::ui::response()
+}
+
+fn directory() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "service": "pdf-inspector",
         "version": env!("CARGO_PKG_VERSION"),
         "openapi": "/openapi.json",
+        "console": "/ui",
         "endpoints": {
+            "GET  /ui": "browser console for trying the API by hand",
             "GET  /health": "liveness probe",
             "GET  /version": "build info",
             "GET  /openapi.json": "OpenAPI 3.1 description of this API",

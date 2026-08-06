@@ -48,6 +48,7 @@ src/
     dto.rs                      – request options and response bodies (serde mirror of lib types)
     handlers.rs                 – one handler per library entry point
     openapi.json                – served verbatim at GET /openapi.json
+    ui.rs / ui.html             – self-contained browser console at GET /ui
   markdown/
     convert.rs                  – core line→Markdown loop, struct-tree role support
     analysis.rs                 – font stats, heading tiers, paragraph thresholds

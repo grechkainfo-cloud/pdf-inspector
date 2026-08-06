@@ -21,6 +21,7 @@ mod tests {
         for route in [
             "/health",
             "/version",
+            "/ui",
             "/v1/process",
             "/v1/detect",
             "/v1/analyze",

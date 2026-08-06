@@ -17,12 +17,36 @@
     "/": {
       "get": {
         "tags": ["service"],
-        "summary": "Endpoint directory",
+        "summary": "Endpoint directory, or the browser console",
+        "description": "Content-negotiated: an `Accept` header containing `text/html` (any browser) gets the console, everything else gets the JSON directory.",
         "security": [],
         "responses": {
           "200": {
-            "description": "List of available endpoints",
-            "content": { "application/json": { "schema": { "type": "object" } } }
+            "description": "List of available endpoints, or the console page",
+            "content": {
+              "application/json": { "schema": { "type": "object" } },
+              "text/html": { "schema": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
+    "/ui": {
+      "get": {
+        "tags": ["service"],
+        "summary": "Browser console",
+        "description": "Single-page console for exercising every endpoint by hand: upload a PDF, pick a call, inspect the result, download the Markdown. Self-contained — no external assets, so it works in an air-gapped deployment. Disable with `PDF_INSPECTOR_UI=0`.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The console page",
+            "content": { "text/html": { "schema": { "type": "string" } } }
+          },
+          "404": {
+            "description": "The console is disabled",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Error" } }
+            }
           }
         }
       }

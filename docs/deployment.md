@@ -16,6 +16,7 @@
 | CLI-конвертер | `/usr/local/bin/pdf2md` |
 | CLI-классификатор | `/usr/local/bin/detect-pdf` |
 | Бинарные CMap'ы для CJK-шрифтов | `/opt/pdf-inspector/bcmaps` |
+| Тестовая консоль | встроена в бинарник, отдаётся на `/ui` |
 
 Образ двухстадийный: компиляция идёт в `rust:1-slim-bookworm`, а в финальный
 `debian:bookworm-slim` попадают только собранные бинарники и CMap'ы. Ни
@@ -203,6 +204,9 @@ curl -s http://localhost:8080/health          # {"status":"ok"}
 curl -s -F file=@tests/fixtures/nexo-price-en.pdf http://localhost:8080/v1/detect
 docker rm -f pdf-check
 ```
+
+Проще всего проверить работу глазами — открыть тестовую консоль
+<http://localhost:8080/ui>, перетащить туда PDF и нажать «Выполнить».
 
 ---
 

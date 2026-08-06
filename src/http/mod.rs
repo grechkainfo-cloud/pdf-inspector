@@ -17,6 +17,7 @@ pub mod error;
 pub mod handlers;
 pub mod openapi;
 pub mod payload;
+pub mod ui;
 
 use axum::extract::{DefaultBodyLimit, Request, State};
 use axum::http::header::AUTHORIZATION;
@@ -46,6 +47,8 @@ pub struct ServerConfig {
     pub max_upload_bytes: usize,
     /// How many PDFs may be parsed concurrently.
     pub max_concurrency: usize,
+    /// Serve the browser console at `/ui`.
+    pub ui_enabled: bool,
 }
 
 impl Default for ServerConfig {
@@ -55,6 +58,7 @@ impl Default for ServerConfig {
             api_key: None,
             max_upload_bytes: DEFAULT_MAX_UPLOAD_MB * 1024 * 1024,
             max_concurrency: default_concurrency(),
+            ui_enabled: true,
         }
     }
 }
@@ -118,6 +122,13 @@ impl ServerConfig {
             config.max_concurrency = parsed;
         }
 
+        if let Some(value) = env_var("PDF_INSPECTOR_UI") {
+            config.ui_enabled = !matches!(
+                value.to_ascii_lowercase().as_str(),
+                "0" | "off" | "no" | "false" | "disabled"
+            );
+        }
+
         Ok(config)
     }
 }
@@ -134,6 +145,7 @@ fn env_var(name: &str) -> Option<String> {
 #[derive(Clone)]
 pub struct AppState {
     pub max_upload_bytes: usize,
+    pub ui_enabled: bool,
     api_key: Option<Arc<String>>,
     workers: Arc<Semaphore>,
 }
@@ -142,6 +154,7 @@ impl AppState {
     pub fn new(config: &ServerConfig) -> Self {
         Self {
             max_upload_bytes: config.max_upload_bytes,
+            ui_enabled: config.ui_enabled,
             api_key: config.api_key.clone().map(Arc::new),
             workers: Arc::new(Semaphore::new(config.max_concurrency)),
         }
@@ -208,6 +221,7 @@ pub fn router(state: AppState) -> Router {
 
     Router::new()
         .route("/", get(handlers::index))
+        .route("/ui", get(handlers::ui))
         .route("/health", get(handlers::health))
         // k8s-style aliases.
         .route("/healthz", get(handlers::health))
@@ -239,6 +253,9 @@ pub async fn serve(config: ServerConfig) -> std::io::Result<()> {
             "disabled"
         },
     );
+    if config.ui_enabled {
+        log::info!("browser console: http://{local_addr}/ui");
+    }
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
@@ -358,5 +375,6 @@ mod tests {
         assert!(config.api_key.is_none());
         assert_eq!(config.max_upload_bytes, DEFAULT_MAX_UPLOAD_MB * 1024 * 1024);
         assert!(config.max_concurrency >= 1);
+        assert!(config.ui_enabled);
     }
 }
