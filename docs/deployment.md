@@ -452,6 +452,7 @@ docker compose down
 | Симптом | Причина и решение |
 |---|---|
 | `No such container: pdf-inspector` в журнале | Сообщение `ExecStartPre`/`ExecStop`: юнит на всякий случай удаляет контейнер, оставшийся от прошлого запуска, а удалять нечего. На работу не влияет — важно лишь состояние службы (`systemctl is-active pdf-inspector`, `docker ps`). В свежей версии `deploy/pdf-inspector.service` это сообщение погашено. |
+| `unknown log opt 'max-file' for journald log driver` | На сервере драйвер логов по умолчанию — `journald`, а `max-size`/`max-file` понимает только `json-file`. Юнит теперь задаёт `--log-driver json-file` явно; в старой копии либо добавьте этот флаг, либо уберите обе строки `--log-opt`. Логи службы в любом случае читаются через `journalctl -u pdf-inspector`. |
 | `curl: connection refused` | Контейнер не запущен (`systemctl status pdf-inspector`) или порт не проброшен (проверьте `docker ps`). |
 | `401 unauthorized` | Задан `PDF_INSPECTOR_API_KEY` — передайте `Authorization: Bearer <key>`. |
 | `413 payload_too_large` | Файл больше `PDF_INSPECTOR_MAX_UPLOAD_MB`; поднимите лимит и, если стоит nginx, `client_max_body_size`. |

@@ -33,6 +33,10 @@ EnvironmentFile=-/etc/pdf-inspector.env
 # ("No such container"); the message is expected, so it is dropped here
 # instead of landing in the journal on every start.
 ExecStartPre=-/bin/sh -c '/usr/bin/docker rm -f ${PDF_INSPECTOR_CONTAINER} >/dev/null 2>&1 || true'
+# The log driver is pinned: max-size/max-file belong to json-file, and a
+# daemon defaulting to journald rejects them outright ("unknown log opt").
+# The unit's own stdout reaches the journal either way, so `journalctl -u
+# pdf-inspector` stays the place to read the logs.
 ExecStart=/usr/bin/docker run \
     --rm \
     --name ${PDF_INSPECTOR_CONTAINER} \
@@ -43,6 +47,7 @@ ExecStart=/usr/bin/docker run \
     --cap-drop ALL \
     --security-opt no-new-privileges:true \
     --memory 2g \
+    --log-driver json-file \
     --log-opt max-size=10m \
     --log-opt max-file=3 \
     ${PDF_INSPECTOR_IMAGE}
