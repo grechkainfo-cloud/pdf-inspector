@@ -451,6 +451,7 @@ docker compose down
 
 | Симптом | Причина и решение |
 |---|---|
+| `No such container: pdf-inspector` в журнале | Сообщение `ExecStartPre`/`ExecStop`: юнит на всякий случай удаляет контейнер, оставшийся от прошлого запуска, а удалять нечего. На работу не влияет — важно лишь состояние службы (`systemctl is-active pdf-inspector`, `docker ps`). В свежей версии `deploy/pdf-inspector.service` это сообщение погашено. |
 | `curl: connection refused` | Контейнер не запущен (`systemctl status pdf-inspector`) или порт не проброшен (проверьте `docker ps`). |
 | `401 unauthorized` | Задан `PDF_INSPECTOR_API_KEY` — передайте `Authorization: Bearer <key>`. |
 | `413 payload_too_large` | Файл больше `PDF_INSPECTOR_MAX_UPLOAD_MB`; поднимите лимит и, если стоит nginx, `client_max_body_size`. |

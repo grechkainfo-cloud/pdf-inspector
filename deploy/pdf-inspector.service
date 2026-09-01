@@ -29,7 +29,10 @@ Environment=PDF_INSPECTOR_PUBLISH=0.0.0.0:8080
 EnvironmentFile=-/etc/pdf-inspector.env
 
 # A leftover container from an unclean shutdown would block the run below.
-ExecStartPre=-/usr/bin/docker rm -f ${PDF_INSPECTOR_CONTAINER}
+# On a normal start there is nothing to remove, and `docker rm` says so
+# ("No such container"); the message is expected, so it is dropped here
+# instead of landing in the journal on every start.
+ExecStartPre=-/bin/sh -c '/usr/bin/docker rm -f ${PDF_INSPECTOR_CONTAINER} >/dev/null 2>&1 || true'
 ExecStart=/usr/bin/docker run \
     --rm \
     --name ${PDF_INSPECTOR_CONTAINER} \
@@ -43,7 +46,8 @@ ExecStart=/usr/bin/docker run \
     --log-opt max-size=10m \
     --log-opt max-file=3 \
     ${PDF_INSPECTOR_IMAGE}
-ExecStop=/usr/bin/docker stop --time 30 ${PDF_INSPECTOR_CONTAINER}
+# Same here: a container that already exited is gone (--rm), not an error.
+ExecStop=-/bin/sh -c '/usr/bin/docker stop --time 30 ${PDF_INSPECTOR_CONTAINER} >/dev/null 2>&1 || true'
 
 Restart=always
 RestartSec=5s
