@@ -8,6 +8,7 @@
 
 pub(crate) mod analysis;
 mod classify;
+mod continuation;
 mod convert;
 mod heading;
 mod postprocess;
@@ -567,12 +568,31 @@ fn positioned_table(
     table: &crate::tables::Table,
     chart_order: Option<ChartProseOrder>,
 ) -> PositionedMarkdown {
-    PositionedMarkdown::new(
+    let mut positioned = PositionedMarkdown::new(
         table.rows.first().copied().unwrap_or(0.0),
         table.columns.first().copied().unwrap_or(0.0),
         crate::tables::table_to_markdown(table),
         chart_order,
-    )
+    );
+    if table.kind == crate::tables::TableKind::Data {
+        let mut geometry = table.clone();
+        // Line grids store N+1 borders; rect/heuristic detectors store N
+        // centres or text anchors. Continuation matching needs N columns in
+        // every case, including when adjacent pages use different detectors.
+        if table
+            .cells
+            .first()
+            .is_some_and(|row| table.columns.len() == row.len() + 1)
+        {
+            geometry.columns = table
+                .columns
+                .windows(2)
+                .map(|edges| (edges[0] + edges[1]) / 2.0)
+                .collect();
+        }
+        positioned.table = Some(geometry);
+    }
+    positioned
 }
 
 /// Derive a side-by-side split from rect hint regions.
@@ -1720,6 +1740,14 @@ pub(crate) fn to_markdown_from_items_with_rects_and_lines(
             }
         }
     }
+
+    // Recover page-edge rows before plain text grouping destroys their columns.
+    continuation::recover_table_continuations(
+        &text_items,
+        &mut table_items,
+        &mut page_tables,
+        &page_image_regions,
+    );
 
     // Images are also removed before line grouping, so give them the same
     // logical chart-page position as tables before reinsertion.

@@ -42,9 +42,10 @@ impl ChartProseOrder {
 /// removed before text-line grouping and reinserted during conversion.
 #[derive(Debug, Clone)]
 pub(super) struct PositionedMarkdown {
-    y: f32,
-    x: f32,
-    markdown: String,
+    pub(super) y: f32,
+    pub(super) x: f32,
+    pub(super) markdown: String,
+    pub(super) table: Option<crate::tables::Table>,
     chart_order: Option<ChartProseOrder>,
 }
 
@@ -59,6 +60,7 @@ impl PositionedMarkdown {
             y,
             x,
             markdown,
+            table: None,
             chart_order,
         }
     }
@@ -585,6 +587,19 @@ pub(super) fn merge_continuation_tables(
 
             let next_col_count = count_table_columns(&next_tables[0].markdown);
             if next_col_count != first_col_count {
+                break;
+            }
+            // Equal column counts alone also occur in unrelated tables. The
+            // page-edge recovery pass handles headerless data; this legacy
+            // whole-page merge is safe only for matching headers and geometry.
+            let previous_tables = &page_tables[&prev_page];
+            if previous_tables[0].markdown.lines().next() != next_tables[0].markdown.lines().next()
+                || !matches!((&previous_tables[0].table, &next_tables[0].table),
+                    (Some(first), Some(next)) if first.columns.len() == next.columns.len()
+                        && first.columns.iter().zip(&next.columns).all(|(a, b)| (a - b).abs() <= 8.0)
+                        && super::continuation::numbered_records_continue(first, next,
+                            super::continuation::repeated_header_rows(first, next)))
+            {
                 break;
             }
 
@@ -1516,6 +1531,35 @@ pub fn to_markdown_from_lines(lines: Vec<TextLine>, options: MarkdownOptions) ->
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn continuation_chain_checks_numbering_against_the_previous_page() {
+        for final_number in [3_u32, 1] {
+            let mut tables = HashMap::new();
+            for (page, number) in [(1, 1), (2, 2), (3, final_number)] {
+                let table = crate::tables::Table::new(
+                    vec![70.0, 180.0],
+                    vec![700.0, 650.0],
+                    vec![
+                        vec!["No".into(), "Value".into()],
+                        vec![number.to_string(), "Entry".into()],
+                    ],
+                    vec![],
+                );
+                tables.insert(page, vec![super::super::positioned_table(&table, None)]);
+            }
+
+            merge_continuation_tables(&mut tables, &HashSet::from([1, 2, 3]));
+
+            let expected = if final_number == 3 {
+                "|No|Value|\n|---|---|\n|1|Entry|\n|2|Entry|\n|3|Entry|\n"
+            } else {
+                "|No|Value|\n|---|---|\n|1|Entry|\n|2|Entry|\n"
+            };
+            assert_eq!(tables[&1][0].markdown, expected);
+            assert!(!tables.contains_key(&2));
+            assert_eq!(tables.contains_key(&3), final_number == 1);
+        }
+    }
 
     #[test]
     fn section_number_prefix_detection() {
