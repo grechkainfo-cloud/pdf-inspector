@@ -602,10 +602,7 @@ mod tests {
     #[test]
     fn test_find_column_boundaries_empty() {
         let items: Vec<(usize, &TextItem)> = vec![];
-        assert_eq!(
-            find_column_boundaries(&items, TableDetectionMode::SmallFont),
-            vec![]
-        );
+        assert!(find_column_boundaries(&items, TableDetectionMode::SmallFont).is_empty());
     }
 
     #[test]
@@ -661,7 +658,7 @@ mod tests {
     #[test]
     fn test_find_row_boundaries_empty() {
         let items: Vec<(usize, &TextItem)> = vec![];
-        assert_eq!(find_row_boundaries(&items), vec![]);
+        assert!(find_row_boundaries(&items).is_empty());
     }
 
     #[test]

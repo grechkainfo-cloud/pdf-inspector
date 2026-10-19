@@ -1,0 +1,32 @@
+# Keep the build context small: only Cargo.toml, src/, and external/ are used.
+.git
+.github
+target
+wasm
+napi
+site
+docs
+examples
+scripts
+samples
+tests
+test_output
+
+# Language bindings and their build systems
+pyproject.toml
+pdf_inspector.pyi
+__pycache__
+*.pyc
+.pytest_cache
+node_modules
+package.json
+package-lock.json
+bun.lock
+
+# Docs and tooling (Cargo.lock is kept: it pins the dependency versions)
+*.md
+.gitignore
+.vscode
+.idea
+Dockerfile
+docker-compose.yml

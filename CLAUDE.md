@@ -1,6 +1,6 @@
 # pdf-inspector
 
-Fast PDF text extraction to structured Markdown. CLI binary: `pdf2md`. Detection binary: `detect-pdf`.
+Fast PDF text extraction to structured Markdown. CLI binary: `pdf2md`. Detection binary: `detect-pdf`. HTTP API binary: `pdf-api` (cargo feature `server`).
 
 ## Build & Test
 
@@ -8,6 +8,7 @@ Fast PDF text extraction to structured Markdown. CLI binary: `pdf2md`. Detection
 cargo fmt                                    # format
 cargo clippy -- -D warnings                  # lint (enforced, zero warnings)
 cargo test                                   # unit + integration tests (267+ unit, 73+ integration)
+cargo test --features server                 # adds the HTTP API tests
 cargo build --release                        # release binary for benchmarks
 ```
 
@@ -17,6 +18,8 @@ All three must pass before committing.
 
 - `pdf2md` — extract PDF → Markdown. Supports `--json` for structured output.
 - `detect-pdf` — classify PDF type (TextBased/Scanned/Mixed/ImageBased). Supports `--analyze --json`.
+- `pdf-api` — HTTP server exposing the whole library (`--features server`). See `docs/http-api.md`;
+  packaging and service setup in `docs/deployment.md`.
 
 ## Architecture
 
@@ -39,6 +42,13 @@ src/
     detect_lines.rs             – line-based table detection (H/V line grids)
     grid.rs                     – column/row boundaries, cell assignment
     format.rs                   – table→Markdown formatting, continuation row merging
+  http/                         – HTTP API (feature `server`)
+    mod.rs                      – router, config, auth, blocking-work semaphore
+    payload.rs                  – multipart / base64-JSON / raw-body request parsing
+    dto.rs                      – request options and response bodies (serde mirror of lib types)
+    handlers.rs                 – one handler per library entry point
+    openapi.json                – served verbatim at GET /openapi.json
+    ui.rs / ui.html             – self-contained browser console at GET /ui
   markdown/
     convert.rs                  – core line→Markdown loop, struct-tree role support
     analysis.rs                 – font stats, heading tiers, paragraph thresholds

@@ -1,0 +1,1380 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pdf-inspector — тестовая консоль</title>
+<style>
+/* Ни одного внешнего ресурса: страница обязана работать в закрытом контуре. */
+:root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --ink: #14171a;
+    --muted: #5d6570;
+    --line: #dfe3e8;
+    --accent: #1f6feb;
+    --accent-ink: #ffffff;
+    --ok: #1a7f37;
+    --warn: #9a6700;
+    --err: #cf222e;
+    --code-bg: #f3f4f6;
+    --radius: 8px;
+}
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #0d1117;
+        --panel: #161b22;
+        --ink: #e6edf3;
+        --muted: #8b949e;
+        --line: #30363d;
+        --accent: #4493f8;
+        --accent-ink: #08121f;
+        --ok: #3fb950;
+        --warn: #d29922;
+        --err: #f85149;
+        --code-bg: #0d1117;
+    }
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+code, pre, .mono {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 13px;
+}
+
+/* ---------- Шапка ---------- */
+
+header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+header h1 small { color: var(--muted); font-weight: 400; margin-left: 8px; }
+.spacer { flex: 1 1 auto; }
+
+.key-field { display: flex; align-items: center; gap: 6px; }
+.key-field input { width: 190px; }
+
+/* ---------- Раскладка ---------- */
+
+main {
+    max-width: 1500px;
+    margin: 0 auto;
+    padding: 20px;
+    display: grid;
+    grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+}
+@media (max-width: 980px) {
+    main { grid-template-columns: 1fr; }
+}
+
+.col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+
+.panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+.panel > h2 {
+    margin: 0;
+    padding: 11px 14px;
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line);
+}
+.panel-body { padding: 14px; }
+
+/* ---------- Формы ---------- */
+
+label { display: block; font-size: 13px; margin-bottom: 4px; color: var(--muted); }
+
+input[type=text], input[type=password], input[type=number], select, textarea {
+    width: 100%;
+    padding: 7px 9px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--ink);
+    font: inherit;
+}
+input:focus, select:focus, textarea:focus, button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+textarea { min-height: 150px; resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+
+button {
+    font: inherit;
+    padding: 7px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--ink);
+    cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 600;
+}
+button.small { padding: 4px 9px; font-size: 13px; }
+
+.field { margin-bottom: 12px; }
+.field:last-child { margin-bottom: 0; }
+.hint { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+.check { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+.check input { margin: 3px 0 0; flex: none; }
+.check label { margin: 0; color: var(--ink); font-size: 14px; }
+.check .hint { margin: 0; }
+
+.row { display: flex; gap: 10px; align-items: flex-end; }
+.row > * { flex: 1 1 0; min-width: 0; }
+
+/* ---------- Зона файла ---------- */
+
+#drop {
+    border: 2px dashed var(--line);
+    border-radius: var(--radius);
+    padding: 22px 14px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .12s, background .12s;
+}
+#drop:hover, #drop.over { border-color: var(--accent); background: var(--code-bg); }
+#drop .big { font-size: 15px; font-weight: 600; }
+#drop .sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
+#file-info { display: none; margin-top: 12px; font-size: 13px; }
+#file-info.shown { display: block; }
+#file-name { font-weight: 600; word-break: break-all; }
+
+/* ---------- Результаты ---------- */
+
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); padding: 0 10px; flex-wrap: wrap; }
+.tab {
+    padding: 8px 12px;
+    font-size: 13px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: none;
+    border-radius: 0;
+    color: var(--muted);
+}
+.tab[aria-selected=true] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 7px; padding: 12px 14px 0; }
+.chip {
+    font-size: 12px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: var(--code-bg);
+    border: 1px solid var(--line);
+    white-space: nowrap;
+}
+.chip b { font-weight: 650; }
+.chip.ok   { color: var(--ok);   border-color: currentColor; }
+.chip.warn { color: var(--warn); border-color: currentColor; }
+.chip.err  { color: var(--err);  border-color: currentColor; }
+
+.out { padding: 14px; overflow: auto; max-height: 62vh; }
+.out pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+
+.md-preview { line-height: 1.6; }
+.md-preview h1, .md-preview h2, .md-preview h3,
+.md-preview h4, .md-preview h5, .md-preview h6 { margin: 1.1em 0 .5em; line-height: 1.3; }
+.md-preview h1 { font-size: 1.5em; } .md-preview h2 { font-size: 1.3em; }
+.md-preview h3 { font-size: 1.14em; } .md-preview h4 { font-size: 1em; }
+.md-preview p, .md-preview ul, .md-preview ol { margin: .6em 0; }
+.md-preview li { margin: .2em 0; }
+.md-preview pre { background: var(--code-bg); padding: 10px; border-radius: 6px; overflow-x: auto; }
+.md-preview code { background: var(--code-bg); padding: 1px 4px; border-radius: 4px; }
+.md-preview pre code { background: none; padding: 0; }
+.md-preview hr { border: none; border-top: 1px solid var(--line); margin: 1.2em 0; }
+.md-preview a { color: var(--accent); }
+.md-preview .page-mark {
+    display: inline-block; font-size: 11px; color: var(--muted);
+    border: 1px dashed var(--line); border-radius: 999px; padding: 1px 8px; margin: 14px 0 6px;
+}
+
+table.data, .md-preview table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 13px;
+    display: block;
+    overflow-x: auto;
+}
+table.data th, table.data td, .md-preview th, .md-preview td {
+    border: 1px solid var(--line);
+    padding: 5px 8px;
+    text-align: left;
+    vertical-align: top;
+}
+table.data th, .md-preview th { background: var(--code-bg); font-weight: 650; white-space: nowrap; }
+
+.card {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    margin-bottom: 10px;
+    overflow: hidden;
+}
+.card > summary {
+    padding: 8px 12px;
+    cursor: pointer;
+    background: var(--code-bg);
+    font-size: 13px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+.card > summary::-webkit-details-marker { display: none; }
+.card > summary::before { content: "▸"; color: var(--muted); }
+.card[open] > summary::before { content: "▾"; }
+.card .card-body { padding: 12px; }
+.card .card-body pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+.badge { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid currentColor; }
+.badge.ocr { color: var(--warn); }
+.badge.native { color: var(--ok); }
+
+.placeholder { padding: 40px 14px; text-align: center; color: var(--muted); }
+
+.curl {
+    background: var(--code-bg);
+    border-top: 1px solid var(--line);
+    padding: 10px 14px;
+}
+.curl pre { margin: 6px 0 0; white-space: pre-wrap; word-break: break-all; color: var(--muted); }
+
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 14px 0; }
+
+.banner { padding: 10px 14px; font-size: 13px; border-radius: 6px; margin-bottom: 12px; }
+.banner.err  { background: color-mix(in srgb, var(--err) 12%, transparent); color: var(--err); }
+.banner.warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+
+.sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+</style>
+</head>
+<body>
+
+<header>
+    <h1>pdf-inspector <small id="server-version">тестовая консоль</small></h1>
+    <div class="spacer"></div>
+    <div class="key-field">
+        <label for="api-key" style="margin:0">API-ключ</label>
+        <input type="password" id="api-key" placeholder="не задан" autocomplete="off"
+               title="Нужен, только если сервер запущен с PDF_INSPECTOR_API_KEY. Хранится в sessionStorage.">
+    </div>
+</header>
+
+<main>
+    <div class="col">
+        <section class="panel">
+            <h2>1. Документ</h2>
+            <div class="panel-body">
+                <div id="drop" tabindex="0" role="button" aria-label="Выбрать PDF-файл">
+                    <div class="big">Перетащите PDF сюда</div>
+                    <div class="sub">или нажмите, чтобы выбрать файл</div>
+                </div>
+                <input type="file" id="file-input" accept="application/pdf,.pdf" class="sr-only">
+                <div id="file-info">
+                    <div id="file-name"></div>
+                    <div class="hint" id="file-meta"></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>2. Что вызвать</h2>
+            <div class="panel-body">
+                <div class="field">
+                    <label for="endpoint">Эндпоинт</label>
+                    <select id="endpoint"></select>
+                    <div class="hint" id="endpoint-desc"></div>
+                </div>
+                <div id="options"></div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>3. Запрос</h2>
+            <div class="panel-body">
+                <button class="primary" id="run" disabled style="width:100%">Выполнить</button>
+                <div class="hint" id="run-hint" style="text-align:center;margin-top:8px">Сначала выберите файл</div>
+            </div>
+            <div class="curl">
+                <label style="margin:0">Эквивалент curl</label>
+                <pre class="mono" id="curl"></pre>
+            </div>
+        </section>
+    </div>
+
+    <div class="col">
+        <section class="panel">
+            <h2>Результат</h2>
+            <div id="result">
+                <div class="placeholder">Загрузите PDF и нажмите «Выполнить»</div>
+            </div>
+        </section>
+    </div>
+</main>
+
+<script>
+"use strict";
+
+// =========================================================================
+// Каталог эндпоинтов
+// =========================================================================
+
+const MD_OPTS = [
+    "pages1", "password", "compact", "include_page_numbers", "include_images",
+    "include_links", "strip_headers_footers", "detect_headers", "detect_lists",
+    "detect_code", "strategy", "sample_size",
+];
+const DETECT_OPTS = ["pages1", "password", "strategy", "sample_size"];
+
+const ENDPOINTS = [
+    {
+        id: "process", path: "/v1/process", group: "Документ",
+        label: "Markdown — полный конвейер",
+        desc: "Определение типа, извлечение текста, конвертация в Markdown.",
+        options: MD_OPTS, view: "markdown",
+    },
+    {
+        id: "detect", path: "/v1/detect", group: "Документ",
+        label: "Определение типа",
+        desc: "Самый быстрый вызов: метаданные и выборка страниц, текст не извлекается.",
+        options: DETECT_OPTS, view: "summary",
+    },
+    {
+        id: "analyze", path: "/v1/analyze", group: "Документ",
+        label: "Анализ вёрстки",
+        desc: "Извлечение и оценка сложности вёрстки, без генерации Markdown.",
+        options: DETECT_OPTS, view: "summary",
+    },
+    {
+        id: "classify", path: "/v1/classify", group: "Документ",
+        label: "Классификация для маршрутизации",
+        desc: "10–50 мс: тип документа и страницы под OCR (нумерация с нуля). Параметров нет.",
+        options: [], view: "summary",
+    },
+    {
+        id: "text", path: "/v1/text", group: "Документ",
+        label: "Плоский текст",
+        desc: "Текст без структурирования и разметки.",
+        options: ["pages1", "password"], view: "text",
+    },
+    {
+        id: "items", path: "/v1/items", group: "Документ",
+        label: "Позиционированные фрагменты",
+        desc: "Координаты, шрифты и начертание каждого фрагмента текста.",
+        options: ["pages1", "password"], view: "items",
+    },
+    {
+        id: "pages", path: "/v1/pages/markdown", group: "Документ",
+        label: "Markdown по страницам",
+        desc: "Отдельный Markdown на каждую страницу плюс метаданные вёрстки. Нумерация с нуля.",
+        options: ["pages0"], view: "pages",
+    },
+    {
+        id: "regions-text", path: "/v1/regions/text", group: "Области страницы",
+        label: "Текст в областях",
+        desc: "Текст внутри заданных прямоугольников. Координаты — пункты PDF, начало отсчёта вверху слева.",
+        options: ["json:page_regions"], view: "regions",
+    },
+    {
+        id: "regions-tables", path: "/v1/regions/tables", group: "Области страницы",
+        label: "Таблицы в областях",
+        desc: "То же, но внутри каждой области запускается распознавание таблиц.",
+        options: ["json:page_regions"], view: "regions",
+    },
+    {
+        id: "vector-grid", path: "/v1/regions/vector-grid", group: "Области страницы",
+        label: "Поиск разлинованной сетки",
+        desc: "Ищет сетку из линий или прямоугольников — таблицу с разлиновкой можно обработать без TSR-модели.",
+        options: ["json:vector_grid"], view: "json",
+    },
+    {
+        id: "tsr", path: "/v1/tables/structure", group: "Таблицы по внешней структуре",
+        label: "Markdown по структуре (без контроля качества)",
+        desc: "Структуру даёт внешняя модель, текст ячеек берётся из PDF. OCR не используется.",
+        options: ["json:tsr"], view: "tables",
+    },
+    {
+        id: "tsr-auto", path: "/v1/tables/structure/auto", group: "Таблицы по внешней структуре",
+        label: "Markdown по структуре с автоисправлением",
+        desc: "То же, но распознаёт сбои TSR и чинит вывод. Рекомендуется для продакшена.",
+        options: ["json:tsr"], view: "tables",
+    },
+    {
+        id: "tsr-cells", path: "/v1/tables/structure/cells", group: "Таблицы по внешней структуре",
+        label: "Структурированные ячейки",
+        desc: "Ячейки с координатами, объединениями и флагом заголовка вместо готового Markdown.",
+        options: ["json:tsr"], view: "cells",
+    },
+];
+
+const OPTION_DEFS = {
+    pages1: { name: "pages", type: "text", label: "Страницы", placeholder: "все",
+              hint: "Нумерация с единицы: 1,3,5-10" },
+    pages0: { name: "pages", type: "text", label: "Страницы", placeholder: "все",
+              hint: "Нумерация с нуля: 0,2,4-9" },
+    password: { name: "password", type: "password", label: "Пароль PDF", placeholder: "нет" },
+    compact: { name: "compact", type: "bool", label: "Компактный профиль", def: false,
+               hint: "Схлопывает многоточия и прочее дорогое форматирование" },
+    include_page_numbers: { name: "include_page_numbers", type: "bool", def: false,
+                            label: "Маркеры страниц", hint: "Вставляет <!-- Page N -->" },
+    include_images: { name: "include_images", type: "bool", def: false,
+                      label: "Плейсхолдеры изображений" },
+    include_links: { name: "include_links", type: "bool", def: true, label: "Гиперссылки" },
+    strip_headers_footers: { name: "strip_headers_footers", type: "bool", def: true,
+                             label: "Убирать колонтитулы" },
+    detect_headers: { name: "detect_headers", type: "bool", def: true, label: "Заголовки" },
+    detect_lists: { name: "detect_lists", type: "bool", def: true, label: "Списки" },
+    detect_code: { name: "detect_code", type: "bool", def: true, label: "Блоки кода" },
+    strategy: { name: "strategy", type: "select", label: "Стратегия детектора",
+                values: [["", "sample (по умолчанию)"], ["early_exit", "early_exit"],
+                         ["full", "full"], ["sample", "sample"]] },
+    sample_size: { name: "sample_size", type: "number", label: "Размер выборки", placeholder: "8" },
+};
+
+const JSON_TEMPLATES = {
+    page_regions: `{
+  "page_regions": [
+    { "page": 0, "regions": [[0, 0, 612, 792]] }
+  ]
+}`,
+    vector_grid: `{
+  "page": 0,
+  "region": [0, 0, 612, 792],
+  "render_dpi": 200
+}`,
+    tsr: `{
+  "tables": [
+    {
+      "page": 0,
+      "crop_pdf_pt_bbox": [0, 0, 612, 792],
+      "render_dpi": 200,
+      "structure_tokens": [
+        "<table>", "<tr>", "<td></td>", "<td></td>", "</tr>",
+        "<tr>", "<td></td>", "<td></td>", "</tr>", "</table>"
+      ],
+      "cell_bboxes": [
+        [0, 0, 850, 100], [850, 0, 1700, 100],
+        [0, 100, 850, 200], [850, 100, 1700, 200]
+      ]
+    }
+  ]
+}`,
+};
+
+// =========================================================================
+// Состояние
+// =========================================================================
+
+const state = { file: null };
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined) node.textContent = text;
+    return node;
+};
+
+function currentEndpoint() {
+    return ENDPOINTS.find((e) => e.id === $("endpoint").value) || ENDPOINTS[0];
+}
+
+function humanSize(bytes) {
+    const units = ["Б", "КБ", "МБ", "ГБ"];
+    let value = bytes, i = 0;
+    while (value >= 1024 && i < units.length - 1) { value /= 1024; i++; }
+    return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+// =========================================================================
+// Построение формы
+// =========================================================================
+
+function buildEndpointSelect() {
+    const select = $("endpoint");
+    const groups = new Map();
+    for (const ep of ENDPOINTS) {
+        if (!groups.has(ep.group)) groups.set(ep.group, []);
+        groups.get(ep.group).push(ep);
+    }
+    for (const [name, list] of groups) {
+        const group = el("optgroup");
+        group.label = name;
+        for (const ep of list) {
+            const option = el("option", null, ep.label);
+            option.value = ep.id;
+            group.appendChild(option);
+        }
+        select.appendChild(group);
+    }
+}
+
+function buildOptions() {
+    const ep = currentEndpoint();
+    const host = $("options");
+    host.textContent = "";
+    $("endpoint-desc").textContent = ep.desc;
+
+    if (!ep.options.length) {
+        host.appendChild(el("div", "hint", "Этот эндпоинт параметров не принимает."));
+        return;
+    }
+
+    for (const key of ep.options) {
+        if (key.startsWith("json:")) {
+            const template = JSON_TEMPLATES[key.slice(5)];
+            const field = el("div", "field");
+            const label = el("label", null, "Параметры (JSON)");
+            label.htmlFor = "opt-json";
+            const area = el("textarea");
+            area.id = "opt-json";
+            area.value = template;
+            area.spellcheck = false;
+            field.append(label, area,
+                el("div", "hint", "Уходит в поле options запроса. Координаты — пункты PDF, начало отсчёта вверху слева."));
+            host.appendChild(field);
+            area.addEventListener("input", updateCurl);
+            continue;
+        }
+
+        const def = OPTION_DEFS[key];
+        if (!def) continue;
+
+        if (def.type === "bool") {
+            const wrap = el("div", "check");
+            const input = el("input");
+            input.type = "checkbox";
+            input.id = "opt-" + def.name;
+            input.checked = !!def.def;
+            input.dataset.default = String(!!def.def);
+            const box = el("div");
+            const label = el("label", null, def.label);
+            label.htmlFor = input.id;
+            box.appendChild(label);
+            if (def.hint) box.appendChild(el("div", "hint", def.hint));
+            wrap.append(input, box);
+            host.appendChild(wrap);
+            input.addEventListener("change", updateCurl);
+            continue;
+        }
+
+        const field = el("div", "field");
+        const label = el("label", null, def.label);
+        label.htmlFor = "opt-" + def.name;
+        let input;
+        if (def.type === "select") {
+            input = el("select");
+            for (const [value, text] of def.values) {
+                const option = el("option", null, text);
+                option.value = value;
+                input.appendChild(option);
+            }
+        } else {
+            input = el("input");
+            input.type = def.type === "number" ? "number" : def.type;
+            if (def.placeholder) input.placeholder = def.placeholder;
+            if (def.type === "password") input.autocomplete = "off";
+        }
+        input.id = "opt-" + def.name;
+        field.append(label, input);
+        if (def.hint) field.appendChild(el("div", "hint", def.hint));
+        host.appendChild(field);
+        input.addEventListener("input", updateCurl);
+        input.addEventListener("change", updateCurl);
+    }
+}
+
+/** Собирает только те параметры, что отличаются от значений по умолчанию. */
+function collectOptions() {
+    const ep = currentEndpoint();
+    const flat = {};
+    let json = null;
+
+    for (const key of ep.options) {
+        if (key.startsWith("json:")) {
+            const raw = $("opt-json").value.trim();
+            if (raw) {
+                try {
+                    json = JSON.parse(raw);
+                } catch (e) {
+                    throw new Error("Параметры не разбираются как JSON: " + e.message);
+                }
+            }
+            continue;
+        }
+        const def = OPTION_DEFS[key];
+        const input = $("opt-" + def.name);
+        if (!input) continue;
+
+        if (def.type === "bool") {
+            if (input.checked !== (input.dataset.default === "true")) {
+                flat[def.name] = input.checked;
+            }
+        } else {
+            const value = input.value.trim();
+            if (value) flat[def.name] = value;
+        }
+    }
+    return { flat, json };
+}
+
+// =========================================================================
+// Выполнение запроса
+// =========================================================================
+
+function apiKey() {
+    return $("api-key").value.trim();
+}
+
+function buildFormData(options) {
+    const form = new FormData();
+    form.append("file", state.file, state.file.name);
+    if (options.json) {
+        form.append("options", JSON.stringify(options.json));
+    }
+    for (const [name, value] of Object.entries(options.flat)) {
+        form.append(name, String(value));
+    }
+    return form;
+}
+
+function updateCurl() {
+    const ep = currentEndpoint();
+    let options;
+    try {
+        options = collectOptions();
+    } catch {
+        options = { flat: {}, json: null };
+    }
+
+    const name = state.file ? state.file.name : "document.pdf";
+    const lines = [`curl -X POST ${location.origin}${ep.path}`];
+    if (apiKey()) lines.push(`  -H 'Authorization: Bearer ***'`);
+    lines.push(`  -F file=@${name}`);
+    if (options.json) lines.push(`  -F 'options=${JSON.stringify(options.json)}'`);
+    for (const [key, value] of Object.entries(options.flat)) {
+        // Пароль не показываем даже в примере команды.
+        lines.push(`  -F ${key}=${key === "password" ? "***" : value}`);
+    }
+    $("curl").textContent = lines.join(" \\\n");
+}
+
+async function run() {
+    if (!state.file) return;
+    const ep = currentEndpoint();
+
+    let options;
+    try {
+        options = collectOptions();
+    } catch (e) {
+        showError(0, "invalid_options", e.message);
+        return;
+    }
+
+    const button = $("run");
+    button.disabled = true;
+    button.textContent = "Выполняется…";
+    showPlaceholder("Запрос выполняется. Крупный документ может обрабатываться десятки секунд.");
+
+    const headers = {};
+    if (apiKey()) headers["Authorization"] = "Bearer " + apiKey();
+
+    const started = performance.now();
+    let response, body, contentType = "";
+    try {
+        response = await fetch(ep.path, { method: "POST", headers, body: buildFormData(options) });
+        contentType = response.headers.get("content-type") || "";
+        body = contentType.includes("application/json") ? await response.json() : await response.text();
+    } catch (e) {
+        showError(0, "network_error",
+            "Запрос не ушёл: " + e.message + ". Проверьте, что сервер доступен.");
+        button.disabled = false;
+        button.textContent = "Выполнить";
+        return;
+    }
+    const elapsed = Math.round(performance.now() - started);
+
+    button.disabled = false;
+    button.textContent = "Выполнить";
+
+    if (!response.ok) {
+        const error = body && body.error ? body.error : { code: "http_" + response.status, message: String(body) };
+        showError(response.status, error.code, error.message);
+        return;
+    }
+
+    renderResult(ep, body, elapsed, contentType);
+}
+
+// =========================================================================
+// Вывод результата
+// =========================================================================
+
+function showPlaceholder(text) {
+    const host = $("result");
+    host.textContent = "";
+    host.appendChild(el("div", "placeholder", text));
+}
+
+function showError(status, code, message) {
+    const host = $("result");
+    host.textContent = "";
+    const box = el("div");
+    box.style.padding = "14px";
+    const banner = el("div", "banner err");
+    banner.appendChild(el("div", null, status ? `HTTP ${status} · ${code}` : code));
+    const text = el("div", null, message);
+    text.style.marginTop = "4px";
+    text.style.opacity = ".85";
+    banner.appendChild(text);
+    box.appendChild(banner);
+
+    if (code === "encrypted") {
+        box.appendChild(el("div", "hint", "Заполните поле «Пароль PDF» и повторите."));
+    } else if (code === "unauthorized") {
+        box.appendChild(el("div", "hint", "Сервер запущен с PDF_INSPECTOR_API_KEY — укажите ключ в шапке."));
+    } else if (code === "payload_too_large") {
+        box.appendChild(el("div", "hint", "Файл больше лимита PDF_INSPECTOR_MAX_UPLOAD_MB."));
+    }
+    host.appendChild(box);
+}
+
+function download(filename, text, mime) {
+    const blob = new Blob([text], { type: mime + ";charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = el("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // Освобождаем сразу: объектные URL живут до перезагрузки страницы.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function baseName() {
+    if (!state.file) return "document";
+    return state.file.name.replace(/\.pdf$/i, "") || "document";
+}
+
+function makeButton(text, handler) {
+    const button = el("button", "small", text);
+    button.addEventListener("click", handler);
+    return button;
+}
+
+function chip(text, kind) {
+    return el("span", "chip" + (kind ? " " + kind : ""), text);
+}
+
+function summaryChips(data) {
+    const chips = [];
+    if (data.pdf_type) {
+        const kind = data.pdf_type === "text_based" ? "ok"
+            : data.pdf_type === "mixed" ? "warn" : "err";
+        chips.push(chip("тип: " + data.pdf_type, kind));
+    }
+    if (typeof data.page_count === "number") chips.push(chip(`страниц: ${data.page_count}`));
+    if (typeof data.confidence === "number") chips.push(chip(`уверенность: ${data.confidence.toFixed(2)}`));
+    if (typeof data.processing_time_ms === "number") chips.push(chip(`сервер: ${data.processing_time_ms} мс`));
+    if (typeof data.markdown_length === "number" && data.markdown_length > 0) {
+        chips.push(chip(`markdown: ${data.markdown_length} симв.`));
+    }
+    if (Array.isArray(data.pages_needing_ocr)) {
+        chips.push(data.pages_needing_ocr.length
+            ? chip(`под OCR: ${data.pages_needing_ocr.join(", ")}`, "warn")
+            : chip("OCR не нужен", "ok"));
+    }
+    if (data.layout) {
+        chips.push(data.layout.is_complex ? chip("вёрстка: сложная", "warn") : chip("вёрстка: простая", "ok"));
+        if (data.layout.pages_with_tables && data.layout.pages_with_tables.length) {
+            chips.push(chip("таблицы: " + data.layout.pages_with_tables.join(", ")));
+        }
+        if (data.layout.pages_with_columns && data.layout.pages_with_columns.length) {
+            chips.push(chip("колонки: " + data.layout.pages_with_columns.join(", ")));
+        }
+    }
+    if (data.has_encoding_issues) chips.push(chip("проблемы кодировки", "err"));
+    if (data.title) chips.push(chip("заголовок: " + data.title));
+    return chips;
+}
+
+/**
+ * Собирает панель результата: чипы, кнопки, вкладки.
+ * tabs — массив { name, build() -> Node }.
+ */
+function renderPanel({ chips, buttons, tabs, elapsed }) {
+    const host = $("result");
+    host.textContent = "";
+
+    const chipRow = el("div", "chips");
+    chipRow.appendChild(chip(`всего: ${elapsed} мс`));
+    for (const c of chips) chipRow.appendChild(c);
+    host.appendChild(chipRow);
+
+    if (buttons.length) {
+        const bar = el("div", "toolbar");
+        for (const b of buttons) bar.appendChild(b);
+        host.appendChild(bar);
+    }
+
+    const tabRow = el("div", "tabs");
+    tabRow.style.marginTop = "12px";
+    const body = el("div", "out");
+
+    tabs.forEach((tab, index) => {
+        const button = el("button", "tab", tab.name);
+        button.setAttribute("role", "tab");
+        button.setAttribute("aria-selected", index === 0 ? "true" : "false");
+        button.addEventListener("click", () => {
+            for (const other of tabRow.children) other.setAttribute("aria-selected", "false");
+            button.setAttribute("aria-selected", "true");
+            body.textContent = "";
+            body.appendChild(tab.build());
+        });
+        tabRow.appendChild(button);
+    });
+
+    host.append(tabRow, body);
+    body.appendChild(tabs[0].build());
+}
+
+function pre(text) {
+    const node = el("pre");
+    node.className = "mono";
+    node.textContent = text;
+    return node;
+}
+
+function jsonTab(data) {
+    return { name: "JSON", build: () => pre(JSON.stringify(data, null, 2)) };
+}
+
+function renderResult(ep, data, elapsed, contentType) {
+    const isJson = contentType.includes("application/json");
+
+    // Ответ не JSON (format=markdown / format=text) — показываем как есть.
+    if (!isJson) {
+        renderPanel({
+            chips: [], elapsed,
+            buttons: [makeButton("Скачать", () => download(baseName() + ".md", data, "text/markdown"))],
+            tabs: [{ name: "Текст", build: () => pre(data) }],
+        });
+        return;
+    }
+
+    switch (ep.view) {
+        case "markdown": return viewMarkdown(data, elapsed);
+        case "summary":  return viewSummary(data, elapsed);
+        case "text":     return viewText(data, elapsed);
+        case "items":    return viewItems(data, elapsed);
+        case "pages":    return viewPages(data, elapsed);
+        case "regions":  return viewRegions(data, elapsed);
+        case "tables":   return viewTables(data, elapsed);
+        case "cells":    return viewCells(data, elapsed);
+        default:         return viewJson(data, elapsed);
+    }
+}
+
+function viewMarkdown(data, elapsed) {
+    const markdown = data.markdown || "";
+    renderPanel({
+        chips: summaryChips(data), elapsed,
+        buttons: [
+            makeButton("Скачать .md", () => download(baseName() + ".md", markdown, "text/markdown")),
+            makeButton("Скачать .json", () => download(baseName() + ".json", JSON.stringify(data, null, 2), "application/json")),
+            makeButton("Копировать Markdown", async (event) => {
+                try {
+                    await navigator.clipboard.writeText(markdown);
+                    event.target.textContent = "Скопировано";
+                    setTimeout(() => { event.target.textContent = "Копировать Markdown"; }, 1500);
+                } catch {
+                    event.target.textContent = "Буфер недоступен";
+                }
+            }),
+        ],
+        tabs: [
+            { name: "Предпросмотр", build: () => {
+                const box = el("div", "md-preview");
+                box.innerHTML = renderMarkdown(markdown);
+                return box;
+            } },
+            { name: "Markdown", build: () => pre(markdown || "(пусто)") },
+            jsonTab(data),
+        ],
+    });
+}
+
+function viewSummary(data, elapsed) {
+    renderPanel({ chips: summaryChips(data), elapsed, buttons: [], tabs: [
+        { name: "Сводка", build: () => {
+            const box = el("div");
+            if (Array.isArray(data.ocr_reasons_by_page) && data.ocr_reasons_by_page.length) {
+                box.appendChild(el("h3", null, "Причины OCR по страницам"));
+                const table = el("table", "data");
+                table.innerHTML = "<tr><th>Страница</th><th>Причины</th></tr>";
+                for (const row of data.ocr_reasons_by_page) {
+                    const tr = el("tr");
+                    tr.append(el("td", null, String(row.page)), el("td", null, row.reasons.join(", ")));
+                    table.appendChild(tr);
+                }
+                box.appendChild(table);
+            } else {
+                box.appendChild(el("div", "hint", "Страниц, требующих OCR, нет."));
+            }
+            return box;
+        } },
+        jsonTab(data),
+    ] });
+}
+
+function viewText(data, elapsed) {
+    const text = data.text || "";
+    renderPanel({
+        chips: [chip(`символов: ${text.length}`)], elapsed,
+        buttons: [makeButton("Скачать .txt", () => download(baseName() + ".txt", text, "text/plain"))],
+        tabs: [{ name: "Текст", build: () => pre(text || "(пусто)") }, jsonTab(data)],
+    });
+}
+
+function viewItems(data, elapsed) {
+    const items = data.items || [];
+    const LIMIT = 500;
+    renderPanel({
+        chips: [chip(`фрагментов: ${data.total_items}`), chip(`подчёркнутых: ${data.underlined_count}`)],
+        elapsed,
+        buttons: [makeButton("Скачать .json", () => download(baseName() + "-items.json", JSON.stringify(data, null, 2), "application/json"))],
+        tabs: [
+            { name: "Таблица", build: () => {
+                const box = el("div");
+                if (items.length > LIMIT) {
+                    box.appendChild(el("div", "banner warn",
+                        `Показаны первые ${LIMIT} из ${items.length}. Полный список — во вкладке JSON или в скачанном файле.`));
+                }
+                const table = el("table", "data");
+                const head = el("tr");
+                for (const name of ["стр.", "x", "y", "ш×в", "шрифт", "кегль", "стиль", "текст"]) {
+                    head.appendChild(el("th", null, name));
+                }
+                table.appendChild(head);
+                for (const item of items.slice(0, LIMIT)) {
+                    const style = [item.is_bold && "ж", item.is_italic && "к",
+                                   item.is_underline && "п", item.is_strikeout && "з"]
+                        .filter(Boolean).join(" ");
+                    const tr = el("tr");
+                    tr.append(
+                        el("td", null, String(item.page)),
+                        el("td", null, item.x.toFixed(1)),
+                        el("td", null, item.y.toFixed(1)),
+                        el("td", null, `${item.width.toFixed(1)}×${item.height.toFixed(1)}`),
+                        el("td", null, item.font),
+                        el("td", null, item.font_size.toFixed(1)),
+                        el("td", null, style || "—"),
+                        el("td", null, item.text),
+                    );
+                    table.appendChild(tr);
+                }
+                box.appendChild(table);
+                return box;
+            } },
+            jsonTab(data),
+        ],
+    });
+}
+
+function viewPages(data, elapsed) {
+    const pages = data.pages || [];
+    const needOcr = pages.filter((p) => p.needs_ocr).length;
+    const joined = pages.map((p) => `<!-- Page ${p.page} -->\n\n${p.markdown}`).join("\n\n");
+
+    renderPanel({
+        chips: [
+            chip(`страниц: ${pages.length}`),
+            needOcr ? chip(`под OCR: ${needOcr}`, "warn") : chip("OCR не нужен", "ok"),
+            data.is_complex ? chip("вёрстка: сложная", "warn") : chip("вёрстка: простая", "ok"),
+        ],
+        elapsed,
+        buttons: [makeButton("Скачать .md", () => download(baseName() + "-pages.md", joined, "text/markdown"))],
+        tabs: [
+            { name: "По страницам", build: () => {
+                const box = el("div");
+                if (!pages.length) return el("div", "hint", "Страниц не возвращено.");
+                for (const page of pages) {
+                    const card = el("details", "card");
+                    const summary = el("summary");
+                    summary.appendChild(el("span", null, `Страница ${page.page}`));
+                    summary.appendChild(el("span", "badge " + (page.needs_ocr ? "ocr" : "native"),
+                        page.needs_ocr ? (page.ocr_reason || "нужен OCR") : "извлечено"));
+                    summary.appendChild(el("span", "hint", `${page.markdown.length} симв.`));
+                    const body = el("div", "card-body");
+                    const preview = el("div", "md-preview");
+                    preview.innerHTML = renderMarkdown(page.markdown);
+                    body.appendChild(preview);
+                    card.append(summary, body);
+                    box.appendChild(card);
+                }
+                return box;
+            } },
+            jsonTab(data),
+        ],
+    });
+}
+
+function viewRegions(data, elapsed) {
+    const pages = data.pages || [];
+    let total = 0, ocr = 0;
+    for (const page of pages) {
+        for (const region of page.regions) { total++; if (region.needs_ocr) ocr++; }
+    }
+    renderPanel({
+        chips: [chip(`областей: ${total}`), ocr ? chip(`под OCR: ${ocr}`, "warn") : chip("OCR не нужен", "ok")],
+        elapsed,
+        buttons: [makeButton("Скачать .json", () => download(baseName() + "-regions.json", JSON.stringify(data, null, 2), "application/json"))],
+        tabs: [
+            { name: "По областям", build: () => {
+                const box = el("div");
+                for (const page of pages) {
+                    page.regions.forEach((region, index) => {
+                        const card = el("details", "card");
+                        card.open = true;
+                        const summary = el("summary");
+                        summary.appendChild(el("span", null, `Страница ${page.page}, область ${index}`));
+                        summary.appendChild(el("span", "badge " + (region.needs_ocr ? "ocr" : "native"),
+                            region.needs_ocr ? (region.ocr_reason || "нужен OCR") : "извлечено"));
+                        const body = el("div", "card-body");
+                        body.appendChild(region.text.trim()
+                            ? pre(region.text)
+                            : el("div", "hint", "Текст не извлечён."));
+                        card.append(summary, body);
+                        box.appendChild(card);
+                    });
+                }
+                return box.children.length ? box : el("div", "hint", "Областей не возвращено.");
+            } },
+            jsonTab(data),
+        ],
+    });
+}
+
+function viewTables(data, elapsed) {
+    const tables = data.tables || [];
+    const fallbacks = tables.filter((t) => t.fallback_reason).length;
+    const joined = tables.map((t) => t.markdown).join("\n\n");
+    renderPanel({
+        chips: [
+            chip(`таблиц: ${tables.length}`),
+            fallbacks ? chip(`с автоисправлением: ${fallbacks}`, "warn") : chip("без исправлений", "ok"),
+        ],
+        elapsed,
+        buttons: [makeButton("Скачать .md", () => download(baseName() + "-tables.md", joined, "text/markdown"))],
+        tabs: [
+            { name: "Таблицы", build: () => {
+                const box = el("div");
+                if (!tables.length) return el("div", "hint", "Таблиц не возвращено.");
+                tables.forEach((table, index) => {
+                    const card = el("details", "card");
+                    card.open = true;
+                    const summary = el("summary");
+                    summary.appendChild(el("span", null, `Таблица ${index}`));
+                    if (table.fallback_reason) {
+                        summary.appendChild(el("span", "badge ocr", table.fallback_reason));
+                    }
+                    const body = el("div", "card-body");
+                    if (table.markdown.trim()) {
+                        const preview = el("div", "md-preview");
+                        preview.innerHTML = renderMarkdown(table.markdown);
+                        body.appendChild(preview);
+                    } else {
+                        body.appendChild(el("div", "hint", "Пустой результат."));
+                    }
+                    card.append(summary, body);
+                    box.appendChild(card);
+                });
+                return box;
+            } },
+            { name: "Markdown", build: () => pre(joined || "(пусто)") },
+            jsonTab(data),
+        ],
+    });
+}
+
+function viewCells(data, elapsed) {
+    const tables = data.tables || [];
+    const count = tables.reduce((sum, t) => sum + t.cells.length, 0);
+    renderPanel({
+        chips: [chip(`таблиц: ${tables.length}`), chip(`ячеек: ${count}`)],
+        elapsed,
+        buttons: [makeButton("Скачать .json", () => download(baseName() + "-cells.json", JSON.stringify(data, null, 2), "application/json"))],
+        tabs: [
+            { name: "Ячейки", build: () => {
+                const box = el("div");
+                if (!count) return el("div", "hint", "Ячеек не возвращено.");
+                tables.forEach((table, index) => {
+                    box.appendChild(el("h3", null, `Таблица ${index}`));
+                    const grid = el("table", "data");
+                    const head = el("tr");
+                    for (const name of ["строка", "столбец", "rowspan", "colspan", "заголовок", "текст", "bbox"]) {
+                        head.appendChild(el("th", null, name));
+                    }
+                    grid.appendChild(head);
+                    for (const cell of table.cells) {
+                        const tr = el("tr");
+                        tr.append(
+                            el("td", null, String(cell.row)),
+                            el("td", null, String(cell.col)),
+                            el("td", null, String(cell.rowspan)),
+                            el("td", null, String(cell.colspan)),
+                            el("td", null, cell.is_header ? "да" : "—"),
+                            el("td", null, cell.text),
+                            el("td", null, cell.page_pt_bbox.map((v) => v.toFixed(0)).join(", ")),
+                        );
+                        grid.appendChild(tr);
+                    }
+                    box.appendChild(grid);
+                });
+                return box;
+            } },
+            jsonTab(data),
+        ],
+    });
+}
+
+function viewJson(data, elapsed) {
+    const chips = [];
+    if (typeof data.detected === "boolean") {
+        chips.push(data.detected ? chip("сетка найдена", "ok") : chip("сетка не найдена", "warn"));
+    }
+    if (Array.isArray(data.cell_bboxes)) chips.push(chip(`ячеек: ${data.cell_bboxes.length}`));
+    renderPanel({
+        chips, elapsed,
+        buttons: [makeButton("Скачать .json", () => download(baseName() + ".json", JSON.stringify(data, null, 2), "application/json"))],
+        tabs: [jsonTab(data)],
+    });
+}
+
+// =========================================================================
+// Приблизительный рендер Markdown
+//
+// Полноценный парсер здесь не нужен: задача — оценить качество извлечения,
+// а не воспроизвести спецификацию CommonMark. Поддержаны конструкции,
+// которые реально порождает конвертер: заголовки, таблицы, списки, блоки
+// кода, цитаты, разделители, маркеры страниц и <u> из подчёркиваний.
+// =========================================================================
+
+function escapeHtml(text) {
+    return text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function inline(text) {
+    let out = escapeHtml(text);
+    out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
+    out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+    out = out.replace(/\[([^\]]*)\]\(([^)\s]+)\)/g, (match, label, url) =>
+        // Схему проверяем явно: javascript:/data: в тексте PDF встречаются.
+        /^(https?:|mailto:|#|\/)/i.test(url)
+            ? `<a href="${url}" rel="noopener noreferrer" target="_blank">${label || url}</a>`
+            : match);
+    // Конвертер помечает подчёркнутый текст настоящим тегом — возвращаем его.
+    out = out.replace(/&lt;u&gt;/g, "<u>").replace(/&lt;\/u&gt;/g, "</u>");
+    return out;
+}
+
+function renderMarkdown(markdown) {
+    if (!markdown || !markdown.trim()) return '<div class="hint">(пусто)</div>';
+
+    const lines = markdown.split("\n");
+    const out = [];
+    let i = 0;
+
+    const isTableRow = (line) => /^\s*\|.*\|\s*$/.test(line);
+    const isTableSep = (line) => /^\s*\|[\s:|-]+\|\s*$/.test(line);
+
+    while (i < lines.length) {
+        const line = lines[i];
+
+        if (!line.trim()) { i++; continue; }
+
+        // Маркер страницы из include_page_numbers
+        const page = line.match(/^<!--\s*Page\s+(\d+)\s*-->$/);
+        if (page) {
+            out.push(`<div class="page-mark">страница ${page[1]}</div>`);
+            i++;
+            continue;
+        }
+        if (/^<!--/.test(line.trim())) { i++; continue; }
+
+        // Блок кода
+        if (/^\s*```/.test(line)) {
+            const body = [];
+            i++;
+            while (i < lines.length && !/^\s*```/.test(lines[i])) body.push(lines[i++]);
+            i++;
+            out.push(`<pre><code>${escapeHtml(body.join("\n"))}</code></pre>`);
+            continue;
+        }
+
+        // Заголовок
+        const heading = line.match(/^(#{1,6})\s+(.*)$/);
+        if (heading) {
+            const level = heading[1].length;
+            out.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+            i++;
+            continue;
+        }
+
+        // Разделитель
+        if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { out.push("<hr>"); i++; continue; }
+
+        // Таблица
+        if (isTableRow(line) && isTableSep(lines[i + 1] || "")) {
+            const cells = (row) => row.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+            const head = cells(line);
+            i += 2;
+            const rows = [];
+            while (i < lines.length && isTableRow(lines[i])) rows.push(cells(lines[i++]));
+            const th = head.map((c) => `<th>${inline(c)}</th>`).join("");
+            const body = rows.map((r) => "<tr>" + r.map((c) => `<td>${inline(c)}</td>`).join("") + "</tr>").join("");
+            out.push(`<table><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table>`);
+            continue;
+        }
+
+        // Цитата
+        if (/^\s*>\s?/.test(line)) {
+            const body = [];
+            while (i < lines.length && /^\s*>\s?/.test(lines[i])) body.push(lines[i++].replace(/^\s*>\s?/, ""));
+            out.push(`<blockquote>${inline(body.join(" "))}</blockquote>`);
+            continue;
+        }
+
+        // Список
+        const bullet = /^\s*[-*+]\s+/;
+        const numbered = /^\s*\d+[.)]\s+/;
+        if (bullet.test(line) || numbered.test(line)) {
+            const ordered = numbered.test(line);
+            const marker = ordered ? numbered : bullet;
+            const items = [];
+            while (i < lines.length && marker.test(lines[i])) {
+                items.push(`<li>${inline(lines[i].replace(marker, ""))}</li>`);
+                i++;
+            }
+            out.push(ordered ? `<ol>${items.join("")}</ol>` : `<ul>${items.join("")}</ul>`);
+            continue;
+        }
+
+        // Абзац: собираем до пустой строки или начала другого блока
+        const paragraph = [];
+        while (i < lines.length && lines[i].trim()
+               && !/^(#{1,6}\s|\s*```|\s*>|<!--)/.test(lines[i])
+               && !bullet.test(lines[i]) && !numbered.test(lines[i])
+               && !isTableRow(lines[i])) {
+            paragraph.push(lines[i++]);
+        }
+        if (paragraph.length) out.push(`<p>${inline(paragraph.join(" "))}</p>`);
+        else i++;
+    }
+
+    return out.join("\n");
+}
+
+// =========================================================================
+// Файл
+// =========================================================================
+
+function setFile(file) {
+    if (!file) return;
+    const looksPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+    state.file = file;
+
+    $("file-info").classList.add("shown");
+    $("file-name").textContent = file.name;
+    $("file-meta").textContent = humanSize(file.size)
+        + (looksPdf ? "" : " · расширение не .pdf — сервер отклонит файл, если это не PDF");
+
+    $("run").disabled = false;
+    $("run-hint").textContent = "";
+    updateCurl();
+}
+
+// =========================================================================
+// Инициализация
+// =========================================================================
+
+function init() {
+    buildEndpointSelect();
+    buildOptions();
+    updateCurl();
+
+    $("endpoint").addEventListener("change", () => { buildOptions(); updateCurl(); });
+    $("run").addEventListener("click", run);
+
+    const input = $("file-input");
+    const drop = $("drop");
+    drop.addEventListener("click", () => input.click());
+    drop.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); }
+    });
+    input.addEventListener("change", () => setFile(input.files[0]));
+
+    for (const type of ["dragenter", "dragover"]) {
+        document.addEventListener(type, (e) => { e.preventDefault(); drop.classList.add("over"); });
+    }
+    for (const type of ["dragleave", "drop"]) {
+        document.addEventListener(type, (e) => { e.preventDefault(); drop.classList.remove("over"); });
+    }
+    document.addEventListener("drop", (e) => {
+        if (e.dataTransfer && e.dataTransfer.files.length) setFile(e.dataTransfer.files[0]);
+    });
+
+    // Ключ живёт только до закрытия вкладки: localStorage на общей машине —
+    // это надолго оставленный секрет.
+    const key = $("api-key");
+    key.value = sessionStorage.getItem("pdf-inspector-key") || "";
+    key.addEventListener("input", () => {
+        sessionStorage.setItem("pdf-inspector-key", key.value);
+        updateCurl();
+    });
+
+    fetch("/version")
+        .then((r) => r.json())
+        .then((v) => { $("server-version").textContent = "v" + v.version + " · тестовая консоль"; })
+        .catch(() => { $("server-version").textContent = "сервер не отвечает"; });
+}
+
+init();
+</script>
+</body>
+</html>

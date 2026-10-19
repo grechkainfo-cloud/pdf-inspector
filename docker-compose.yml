@@ -1,0 +1,49 @@
+# Local / single-host deployment of the pdf-inspector HTTP API.
+#
+#   docker compose up -d --build
+#   curl -F file=@document.pdf http://localhost:8080/v1/process
+#
+services:
+  pdf-inspector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pdf-inspector:latest
+    container_name: pdf-inspector
+    restart: unless-stopped
+    ports:
+      # Bind to localhost only when a reverse proxy terminates TLS in front.
+      - "8080:8080"
+    environment:
+      PDF_INSPECTOR_BIND: "0.0.0.0:8080"
+      PDF_INSPECTOR_MAX_UPLOAD_MB: "64"
+      # Leave unset to disable authentication.
+      # PDF_INSPECTOR_API_KEY: "change-me"
+      # Defaults to the CPU count.
+      # PDF_INSPECTOR_MAX_CONCURRENCY: "4"
+      RUST_LOG: "info"
+    # The service is stateless and writes nothing: run the whole filesystem
+    # read-only and drop every capability.
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          # Peak memory tracks the largest PDF times the worker count.
+          memory: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

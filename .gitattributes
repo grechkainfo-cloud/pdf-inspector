@@ -1,0 +1,11 @@
+# Files consumed by Linux tooling must keep LF endings regardless of the
+# checkout platform. With core.autocrlf=true a Windows checkout would hand a
+# CRLF copy to scp, and the failures are opaque: a CRLF shebang aborts with
+# "bad interpreter: /usr/bin/env bash^M", and a CRLF env file gives every
+# value a trailing carriage return (PDF_INSPECTOR_BIND=0.0.0.0:8080\r).
+*.sh        text eol=lf
+Dockerfile  text eol=lf
+*.service   text eol=lf
+*.env       text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf

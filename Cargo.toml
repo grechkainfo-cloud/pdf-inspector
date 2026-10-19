@@ -43,6 +43,20 @@ unicode-normalization = "0.1"
 # TrueType font parsing (for Identity-H CID font cmap extraction)
 ttf-parser = "0.25"
 
+# HTTP API server (feature "server"). All optional: the default build, the
+# wasm build, and the crates.io package are unaffected when the feature is off.
+axum = { version = "0.8", features = ["multipart"], optional = true }
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "net",
+    "signal",
+    "sync",
+], optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+base64 = { version = "0.22", optional = true }
+
 # Native builds keep lopdf's parallel parser and CLI logging. Browser WASM is
 # deliberately single-threaded so it works without cross-origin isolation.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -58,10 +72,13 @@ include_dir = "0.7"
 
 [dev-dependencies]
 tempfile = "3.3"
+# Drives the HTTP router in tests/http_api_tests.rs without opening a socket.
+tower = { version = "0.5", features = ["util"] }
 
 [features]
 default = []
 python = ["pyo3"]
+server = ["dep:axum", "dep:tokio", "dep:serde", "dep:serde_json", "dep:base64"]
 
 [[bin]]
 name = "pdf2md"
@@ -74,3 +91,8 @@ path = "src/bin/detect_pdf.rs"
 [[bin]]
 name = "dump_ops"
 path = "src/bin/dump_ops.rs"
+
+[[bin]]
+name = "pdf-api"
+path = "src/bin/pdf_api.rs"
+required-features = ["server"]

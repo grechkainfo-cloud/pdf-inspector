@@ -27,6 +27,9 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
 
+      - name: Run HTTP API tests
+        run: cargo test --features server --verbose
+
       - name: Test developer scripts
         run: python3 -m unittest discover -s scripts/tests
 
@@ -67,6 +70,9 @@ jobs:
 
       - name: Run clippy
         run: cargo clippy -- -D warnings
+
+      - name: Run clippy (HTTP API)
+        run: cargo clippy --features server --all-targets -- -D warnings
 
   build:
     name: Build

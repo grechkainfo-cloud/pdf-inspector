@@ -58,8 +58,17 @@ pub fn extract_text<P: AsRef<Path>>(path: P) -> Result<String, PdfError> {
 
 /// Extract text from PDF memory buffer
 pub fn extract_text_mem(buffer: &[u8]) -> Result<String, PdfError> {
+    extract_text_mem_with_password(buffer, None)
+}
+
+/// Extract text from a PDF memory buffer, decrypting with `password` when the
+/// document is encrypted. `None` falls back to the empty password.
+pub fn extract_text_mem_with_password(
+    buffer: &[u8],
+    password: Option<&str>,
+) -> Result<String, PdfError> {
     crate::validate_pdf_bytes(buffer)?;
-    let (doc, _) = crate::load_document_from_mem(buffer)?;
+    let (doc, _) = crate::load_document_from_mem_with_password(buffer, password)?;
     extract_text_from_doc(&doc)
 }
 
@@ -132,13 +141,35 @@ pub fn extract_text_with_positions_mem_pages(
     Ok(items)
 }
 
+/// Extract text with positions from a memory buffer, limited to specific pages
+/// and decrypting with `password` when the document is encrypted.
+///
+/// `page_filter` is an optional set of 1-indexed page numbers to process.
+pub fn extract_text_with_positions_mem_pages_with_password(
+    buffer: &[u8],
+    page_filter: Option<&HashSet<u32>>,
+    password: Option<&str>,
+) -> Result<Vec<TextItem>, PdfError> {
+    let (items, _rects, _lines) =
+        extract_text_with_positions_mem_and_rects_with_password(buffer, page_filter, password)?;
+    Ok(items)
+}
+
 /// Extract text with positions and rectangles from memory buffer.
 pub(crate) fn extract_text_with_positions_mem_and_rects(
     buffer: &[u8],
     page_filter: Option<&HashSet<u32>>,
 ) -> Result<PageExtraction, PdfError> {
+    extract_text_with_positions_mem_and_rects_with_password(buffer, page_filter, None)
+}
+
+pub(crate) fn extract_text_with_positions_mem_and_rects_with_password(
+    buffer: &[u8],
+    page_filter: Option<&HashSet<u32>>,
+    password: Option<&str>,
+) -> Result<PageExtraction, PdfError> {
     crate::validate_pdf_bytes(buffer)?;
-    let (doc, _) = crate::load_document_from_mem(buffer)?;
+    let (doc, _) = crate::load_document_from_mem_with_password(buffer, password)?;
     let font_cmaps = FontCMaps::from_doc(&doc);
     let (extraction, _thresholds, _gid_pages) =
         extract_positioned_text_from_doc(&doc, &font_cmaps, page_filter)?;

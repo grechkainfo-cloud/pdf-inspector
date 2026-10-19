@@ -1,0 +1,52 @@
+{
+  "headers": [
+    "No",
+    "Category",
+    "City A",
+    "City B",
+    "Other",
+    "Sites"
+  ],
+  "rows": [
+    [
+      "1",
+      "Directors",
+      "41 810",
+      "41 810",
+      "20 900",
+      "13 170"
+    ],
+    [
+      "2",
+      "Deputies",
+      "26 130",
+      "26 130",
+      "13 170",
+      "9 870"
+    ],
+    [
+      "3",
+      "Managers",
+      "15 680",
+      "15 680",
+      "8 230",
+      "6 580"
+    ],
+    [
+      "4",
+      "Other staff",
+      "0",
+      "",
+      "-",
+      "4 180"
+    ]
+  ],
+  "source_pages": [
+    1,
+    1,
+    1,
+    2
+  ],
+  "context": "Travel policy - lodging limits, currency units per day",
+  "note": "Note: receipts are required."
+}
